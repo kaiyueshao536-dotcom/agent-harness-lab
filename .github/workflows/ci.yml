@@ -47,6 +47,11 @@ jobs:
       - name: Build frontend
         run: npm run frontend:build
 
+      - name: Prepare secretless backend configuration
+        run: |
+          cp config/project.template.json config/project.json
+          cp config/user.project.template.json config/user.project.json
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v9.0.0
         with:

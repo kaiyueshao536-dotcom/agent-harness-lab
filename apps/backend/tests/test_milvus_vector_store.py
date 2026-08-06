@@ -10,6 +10,8 @@ from typing import cast
 
 import pytest
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_importing_vector_store_package_does_not_import_pymilvus() -> None:
     sys.modules.pop("super_ai.vector_store", None)
@@ -24,7 +26,9 @@ def test_importing_vector_store_package_does_not_import_pymilvus() -> None:
 def test_default_settings_and_explicit_project_config(tmp_path: Path) -> None:
     from super_ai.vector_store import load_milvus_vector_store_settings
 
-    settings = load_milvus_vector_store_settings()
+    settings = load_milvus_vector_store_settings(
+        config_path=REPOSITORY_ROOT / "config/project.template.json"
+    )
 
     assert settings.uri == "http://localhost:19530"
     assert settings.collection_name == "knowledge_chunks"
@@ -522,7 +526,9 @@ async def test_ready_endpoint_reports_milvus_readiness_without_startup_connectio
 
 
 def test_project_config_contains_milvus_settings() -> None:
-    config = json.loads(Path("../../config/project.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (REPOSITORY_ROOT / "config/project.template.json").read_text(encoding="utf-8")
+    )
     vector_store = config["vectorStore"]
 
     assert vector_store["uri"] == "http://localhost:19530"
