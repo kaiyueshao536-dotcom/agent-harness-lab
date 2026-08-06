@@ -26,5 +26,5 @@
 
 - [x] 5.1 运行 `openspec validate --all` 和后端 Ruff、Pyright、Pytest
 - [x] 5.2 运行前端类型检查、测试与构建
-- [ ] 5.3 初始化 Git，使用真实身份建立 Conventional Commit 基线并复核暂存集合
+- [x] 5.3 初始化 Git，使用真实身份建立 Conventional Commit 基线并复核暂存集合
 - [ ] 5.4 创建 `kaiyueshao536-dotcom/agent-harness-lab` 公共仓库，推送 main 并确认远端文件与 CI
