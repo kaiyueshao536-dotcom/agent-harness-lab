@@ -42,6 +42,7 @@ def test_ci_runs_every_local_quality_gate_without_credentials() -> None:
     assert all(command in workflow for command in required_commands)
     assert "secrets." not in workflow
     assert "ci-placeholder-not-a-secret" in workflow
+    assert "mkdir -p apps/backend/var" in workflow
     assert "contents: read" in workflow
 
 
