@@ -457,6 +457,89 @@ class AgentToolCallAuditModel(Base):
     )
 
 
+class AgentTraceModel(Base):
+    """Persisted root record for one tenant-scoped Agent execution."""
+
+    __tablename__ = "agent_traces"
+    __table_args__ = (
+        Index("ix_agent_traces_owner_started", "owner_user_id", "started_at"),
+        Index(
+            "ix_agent_traces_owner_resource_started",
+            "owner_user_id",
+            "resource_type",
+            "resource_id",
+            "started_at",
+        ),
+        Index("ix_agent_traces_owner_status_started", "owner_user_id", "status", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    execution_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+
+class AgentTraceSpanModel(Base):
+    """Persisted ordered stage within an Agent trace."""
+
+    __tablename__ = "agent_trace_spans"
+    __table_args__ = (
+        UniqueConstraint("trace_id", "sequence", name="uq_agent_trace_spans_trace_sequence"),
+        Index(
+            "ix_agent_trace_spans_owner_trace_sequence",
+            "owner_user_id",
+            "trace_id",
+            "sequence",
+        ),
+        Index(
+            "ix_agent_trace_spans_trace_external",
+            "trace_id",
+            "external_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    trace_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_traces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_span_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_trace_spans.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    external_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+
 class DiagnosticTaskModel(Base):
     """Persisted AIOps diagnostic task."""
 

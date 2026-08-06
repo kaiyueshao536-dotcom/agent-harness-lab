@@ -38,6 +38,7 @@ from super_ai.retrieval import (
     KnowledgeRetrievalTool,
     create_langchain_knowledge_retrieval_tool,
 )
+from super_ai.tracing import AgentTraceService
 
 ToolCallStatus = Literal["started", "delta", "completed", "failed"]
 logger = logging.getLogger(__name__)
@@ -140,10 +141,12 @@ class ChatStreamingService:
         repositories: MemoryRepositories,
         agent_runner: ChatAgentRunner,
         memory_service: ChatMemoryService | None = None,
+        trace_service: AgentTraceService | None = None,
     ) -> None:
         self._repositories = repositories
         self._agent_runner = agent_runner
         self._memory_service = memory_service
+        self._trace_service = trace_service or AgentTraceService(repositories.agent_traces)
 
     async def stream_message(
         self,
@@ -153,14 +156,13 @@ class ChatStreamingService:
         content: str,
         metadata: JsonDict | None = None,
         accessible_knowledge_base_ids: Sequence[str],
+        request_id: str | None = None,
     ) -> AsyncIterator[dict[str, object]]:
         started_at = monotonic()
         message_content = content.strip()
         if not message_content:
             yield _error_event("VALIDATION_INVALID_ARGUMENT")
             return
-        emit_event(logger, "agent.chat.started", sessionId=session.id)
-
         history = await self._repositories.chat.list_messages(
             owner_user_id=owner_user_id,
             session_id=session.id,
@@ -213,6 +215,27 @@ class ChatStreamingService:
             system_prompt=system_prompt,
             skills=selected_skills,
         )
+        trace = await self._trace_service.start_trace(
+            owner_user_id=owner_user_id,
+            execution_type="chat",
+            resource_type="chat_session",
+            resource_id=session.id,
+            request_id=request_id,
+            metadata={"sessionId": session.id},
+        )
+        agent_span_id = await self._trace_service.start_span(
+            trace,
+            kind="agent",
+            name="chat.agent",
+            attributes={"sessionId": session.id},
+        )
+        emit_event(
+            logger,
+            "agent.chat.started",
+            sessionId=session.id,
+            traceId=trace.trace_id,
+            executionType="chat",
+        )
         answer_parts: list[str] = []
         tool_call_ids: list[str] = []
         citations: list[dict[str, object]] = []
@@ -233,6 +256,7 @@ class ChatStreamingService:
                                 "delta": character,
                                 "sequence": sequence,
                             },
+                            trace_id=trace.trace_id,
                         )
                 elif isinstance(event, ChatAgentReasoningDelta):
                     if event.delta == "":
@@ -240,9 +264,17 @@ class ChatStreamingService:
                     reasoning_parts.append(event.delta)
                     sequence += 1
                     yield _sse_event(
-                        "reasoning.delta", {"delta": event.delta, "sequence": sequence}
+                        "reasoning.delta",
+                        {"delta": event.delta, "sequence": sequence},
+                        trace_id=trace.trace_id,
                     )
                 elif isinstance(event, ChatAgentToolCall):
+                    span_id = await self._trace_service.record_tool_event(
+                        trace,
+                        tool_call_id=event.id,
+                        tool_name=event.name,
+                        status=event.status,
+                    )
                     await self._persist_tool_call_audit(
                         owner_user_id=owner_user_id,
                         session_id=session.id,
@@ -258,11 +290,32 @@ class ChatStreamingService:
                         payload["input"] = event.input
                     if event.output is not None:
                         payload["output"] = event.output
-                    yield _sse_event("tool.call", {"toolCall": payload})
+                    yield _sse_event(
+                        "tool.call",
+                        {"toolCall": payload},
+                        trace_id=trace.trace_id,
+                        span_id=span_id,
+                    )
                 else:
                     reference = _reference_payload(event)
                     citations.append(reference)
-                    yield _sse_event("reference.source", {"reference": reference})
+                    retrieval_span_id = await self._trace_service.start_span(
+                        trace,
+                        kind="retrieval",
+                        name="reference.source",
+                        attributes={"referenceId": str(reference.get("id") or "")},
+                    )
+                    await self._trace_service.finalize_span(
+                        trace,
+                        span_id=retrieval_span_id,
+                        status="succeeded",
+                        summary="Reference emitted",
+                    )
+                    yield _sse_event(
+                        "reference.source",
+                        {"reference": reference},
+                        trace_id=trace.trace_id,
+                    )
 
             answer = "".join(answer_parts).strip()
             assistant_message = await self._repositories.chat.append_message(
@@ -275,6 +328,7 @@ class ChatStreamingService:
                     "citations": citations,
                     "reasoning": reasoning_parts,
                     "toolCallIds": tool_call_ids,
+                    "traceId": trace.trace_id,
                 },
             )
             refreshed_session = (
@@ -294,6 +348,21 @@ class ChatStreamingService:
                     history=refreshed_history,
                     system_prompt=await self.build_system_prompt(owner_user_id=owner_user_id),
                 )
+            await self._trace_service.finalize_span(
+                trace,
+                span_id=agent_span_id,
+                status="succeeded",
+                summary="Chat Agent completed",
+                attributes={
+                    "citationCount": len(citations),
+                    "toolCallCount": len(tool_call_ids),
+                },
+            )
+            await self._trace_service.finalize_trace(
+                trace,
+                status="succeeded",
+                summary="Chat Agent completed",
+            )
             yield _sse_event(
                 "complete",
                 {
@@ -307,23 +376,41 @@ class ChatStreamingService:
                         "message": _chat_message_payload(assistant_message),
                     }
                 },
+                trace_id=trace.trace_id,
             )
             emit_event(
                 logger,
                 "agent.chat.completed",
                 sessionId=session.id,
+                traceId=trace.trace_id,
+                executionType="chat",
                 toolCallCount=len(tool_call_ids),
                 durationMs=elapsed_ms(started_at),
             )
         except Exception as exc:
+            await self._trace_service.finalize_span(
+                trace,
+                span_id=agent_span_id,
+                status="failed",
+                summary="Chat Agent failed",
+                attributes={"errorCategory": exc.__class__.__name__},
+            )
+            await self._trace_service.finalize_trace(
+                trace,
+                status="failed",
+                summary="Chat Agent failed",
+                error_category=exc.__class__.__name__,
+            )
             emit_event(
                 logger,
                 "agent.chat.failed",
                 sessionId=session.id,
+                traceId=trace.trace_id,
+                executionType="chat",
                 errorCategory=exc.__class__.__name__,
                 durationMs=elapsed_ms(started_at),
             )
-            yield _error_event("SYSTEM_INTERNAL_ERROR")
+            yield _error_event("SYSTEM_INTERNAL_ERROR", trace_id=trace.trace_id)
             return
 
     async def build_system_prompt(self, *, owner_user_id: str) -> str:
@@ -790,17 +877,28 @@ def encode_sse(event: Mapping[str, object]) -> str:
     return f"event: {event_type}\ndata: {json.dumps(event, separators=(',', ':'))}\n\n"
 
 
-def _sse_event(event_type: str, payload: Mapping[str, object]) -> dict[str, object]:
-    return {
+def _sse_event(
+    event_type: str,
+    payload: Mapping[str, object],
+    *,
+    trace_id: str | None = None,
+    span_id: str | None = None,
+) -> dict[str, object]:
+    event = {
         "id": f"evt_{uuid4().hex}",
         "type": event_type,
         "channel": "chat",
         "timestamp": _now_iso(),
         **payload,
     }
+    if trace_id is not None:
+        event["traceId"] = trace_id
+    if span_id is not None:
+        event["spanId"] = span_id
+    return event
 
 
-def _error_event(code: str) -> dict[str, object]:
+def _error_event(code: str, *, trace_id: str | None = None) -> dict[str, object]:
     category, http_status, message = ERROR_DEFINITIONS[code]
     return _sse_event(
         "error",
@@ -812,6 +910,7 @@ def _error_event(code: str) -> dict[str, object]:
                 "message": message,
             }
         },
+        trace_id=trace_id,
     )
 
 

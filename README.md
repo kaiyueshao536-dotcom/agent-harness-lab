@@ -23,6 +23,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **渐进式 Skill**：上传标准 `SKILL.md`；初始上下文只暴露名称和描述，需要时再加载正文。
 - **上下文与记忆**：按会话选择轮次、窗口占用率或手动压缩策略；压缩保留摘要和完整历史。
 - **RAG**：Markdown/PDF 切分，Milvus 向量检索与 BM25L 并行召回，RRF 融合、Qwen rerank 和可解释排名。
+- **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -34,6 +35,8 @@ flowchart LR
     API --> GRAPH["LangGraph diagnostic workflow"]
     CHAT --> TOOLS["Scoped tool registry"]
     GRAPH --> TOOLS
+    CHAT --> TRACE["Agent Trace service"]
+    GRAPH --> TRACE
     TOOLS --> MCP["MCP / Tencent CLS"]
     TOOLS --> RAG["Hybrid RAG"]
     RAG --> MILVUS["Milvus"]
@@ -41,6 +44,7 @@ flowchart LR
     API --> DB["SQLite repositories"]
     JOBS --> DB
     GRAPH --> DB
+    TRACE --> DB
 ```
 
 核心边界和数据流见 [英文架构概览](docs/architecture.en.md)。
@@ -55,6 +59,7 @@ Alertmanager 活跃告警
   → 根据证据继续或重规划
   → 生成可追溯报告
   → 保存为用户知识库案例
+  → 在“执行追踪”中按 traceId 查看 Planner / Executor / Tool / Report Span
 ```
 
 演示数据的上传和触发都是显式操作。完整步骤见[真实日志与告警教程](docs/tutorials/real-log-and-alert.md)。
@@ -144,6 +149,7 @@ uv run pytest
 
 - 密码使用 Argon2 哈希，不存储明文。
 - 聊天、知识、向量、MCP、AIOps、反馈和审计数据按当前用户与 tenant 作用域访问。
+- Trace 列表与详情同样按当前用户隔离；只保存安全摘要、状态、耗时和结构化标识，不保存完整提示词、思维链、模型密钥或原始工具凭据。
 - Milvus 记录 owner/user/tenant 元数据，检索时强制加入权限过滤。
 - 应用只读取本地 JSON 项目配置，不从 `.env` 或机器环境变量加载业务密钥。
 - 请通过 [GitHub Security Advisories](SECURITY.md) 私下报告漏洞，不要在 Issue 中粘贴凭据或日志原文。
@@ -154,7 +160,6 @@ uv run pytest
 
 下一阶段计划（尚未实现）：
 
-- Agent 执行 Trace 检索与可视化；
 - 回归评测集、指标面板与失败样本分析；
 - 多 Agent 协作和测试 Agent；
 - PostgreSQL/队列支持的多实例任务执行。

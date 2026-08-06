@@ -27,6 +27,8 @@ import {
   buildVectorChunkMetadata,
   type ApiErrorResponse,
   type ApiSuccessResponse,
+  type AgentTraceDetailResponse,
+  type AgentTraceListResponse,
   type BackgroundJob,
   type LoginRequest,
   type RegisterRequest,
@@ -543,6 +545,8 @@ describe("SSE event contracts", () => {
       type: "tool.call",
       channel: "chat",
       timestamp: "2026-07-09T00:00:00.000Z",
+      traceId: "trace_1",
+      spanId: "span_tool_1",
       toolCall: {
         id: "tool_call_1",
         name: "knowledge_retrieval",
@@ -562,6 +566,49 @@ describe("SSE event contracts", () => {
 
     expect(started.toolCall.status).toBe("started");
     expect(completed.toolCall.status).toBe("completed");
+    expect(started.traceId).toBe(completed.traceId);
+    expect(started.spanId).toBe(completed.spanId);
+  });
+
+  it("exports owner-safe Agent Trace list and detail shapes", () => {
+    const trace = {
+      id: "trace_1",
+      executionType: "chat" as const,
+      resourceType: "chat_session",
+      resourceId: "chat_1",
+      requestId: "req_1",
+      status: "succeeded" as const,
+      summary: "Chat completed",
+      errorCategory: null,
+      metadata: { eventCount: 4 },
+      startedAt: "2026-08-06T00:00:00.000Z",
+      completedAt: "2026-08-06T00:00:01.000Z",
+      durationMs: 1000
+    };
+    const list: AgentTraceListResponse = { items: [trace] };
+    const detail: AgentTraceDetailResponse = {
+      trace,
+      spans: [
+        {
+          id: "span_1",
+          traceId: trace.id,
+          parentSpanId: null,
+          externalId: null,
+          sequence: 1,
+          kind: "agent",
+          name: "chat.agent",
+          status: "succeeded",
+          summary: "Agent completed",
+          attributes: {},
+          startedAt: trace.startedAt,
+          completedAt: trace.completedAt,
+          durationMs: trace.durationMs
+        }
+      ]
+    };
+
+    expect(list.items[0]?.id).toBe("trace_1");
+    expect(detail.spans[0]?.traceId).toBe(detail.trace.id);
   });
 });
 
@@ -574,6 +621,8 @@ describe("OpenAPI contract", () => {
         "/auth/login",
         "/auth/logout",
         "/auth/me",
+        "/agent-traces",
+        "/agent-traces/{traceId}",
         "/chat/sessions",
         "/chat/sessions/{sessionId}",
         "/chat/sessions/{sessionId}/messages",
@@ -597,6 +646,8 @@ describe("OpenAPI contract", () => {
 
   it("marks protected paths with bearer auth and unified 401/403 errors", () => {
     const protectedOperations = [
+      OPENAPI_CONTRACT.paths["/agent-traces"]?.get,
+      OPENAPI_CONTRACT.paths["/agent-traces/{traceId}"]?.get,
       OPENAPI_CONTRACT.paths["/chat/sessions"]?.post,
       OPENAPI_CONTRACT.paths["/chat/sessions"]?.get,
       OPENAPI_CONTRACT.paths["/chat/sessions/{sessionId}"]?.get,
@@ -700,5 +751,17 @@ describe("OpenAPI contract", () => {
     expect(evidenceChainOperation?.responses["200"].content).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.AiopsDiagnosticEvidence).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.AiopsReportEvidenceLink).toBeDefined();
+  });
+
+  it("describes typed Agent Trace list and detail reads", () => {
+    const listOperation = OPENAPI_CONTRACT.paths["/agent-traces"]?.get;
+    const detailOperation = OPENAPI_CONTRACT.paths["/agent-traces/{traceId}"]?.get;
+
+    expect(listOperation?.operationId).toBe("listAgentTraces");
+    expect(detailOperation?.operationId).toBe("getAgentTrace");
+    expect(OPENAPI_CONTRACT.components.schemas.AgentTrace).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.AgentTraceSpan).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.AgentTraceListApiResponse).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.AgentTraceDetailApiResponse).toBeDefined();
   });
 });

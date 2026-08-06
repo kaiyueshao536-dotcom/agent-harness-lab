@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, BookOpen, Cable, MessageSquare } from "lucide-vue-next";
+import { Activity, BookOpen, Cable, MessageSquare, Workflow } from "lucide-vue-next";
 
 defineProps<{ readonly activePath: string }>();
 
@@ -7,7 +7,8 @@ const entries = [
   { icon: MessageSquare, label: "对话", to: "/chat" },
   { icon: BookOpen, label: "知识库", to: "/knowledge" },
   { icon: Activity, label: "智能诊断", to: "/aiops" },
-  { icon: Cable, label: "MCP 连接", to: "/mcp" }
+  { icon: Cable, label: "MCP 连接", to: "/mcp" },
+  { icon: Workflow, label: "执行追踪", to: "/traces" }
 ] as const;
 </script>
 

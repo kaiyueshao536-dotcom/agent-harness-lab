@@ -292,6 +292,17 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
             diagnostic_task_id=task.id,
         )
         cases = await repositories.diagnostics.list_cases(owner_user_id="user-a")
+        trace_repository = repositories.agent_traces
+        assert trace_repository is not None
+        traces = await trace_repository.list_traces(
+            owner_user_id="user-a",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+        )
+        trace_spans = await trace_repository.list_spans(
+            owner_user_id="user-a",
+            trace_id=traces[0].id,
+        )
     finally:
         await engine.dispose()
 
@@ -331,6 +342,17 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
         item.id for item in evidence
     }
     assert [event["type"] for event in events][-2:] == ["task.status", "complete"]
+    assert len({event["traceId"] for event in events}) == 1
+    assert traces[0].status == "succeeded"
+    assert traces[0].id == events[0]["traceId"]
+    assert {span.kind for span in trace_spans} >= {
+        "agent",
+        "planner",
+        "executor",
+        "replanner",
+        "report",
+        "tool",
+    }
     assert any(event["type"] == "reference.source" for event in events)
     assert len(cases) == 1
     assert cases[0].task_id == task.id

@@ -1545,6 +1545,7 @@ def create_sqlite_memory_repositories(
         SQLiteMcpConnectionRepository,
         SQLiteUserFeedbackRepository,
     )
+    from super_ai.memory.trace_sqlite import SQLiteAgentTraceRepository
 
     return MemoryRepositories(
         chat=SQLiteChatMemoryRepository(session_factory),
@@ -1555,6 +1556,7 @@ def create_sqlite_memory_repositories(
         document_index_tasks=SQLiteDocumentIndexTaskRepository(session_factory),
         diagnostics=SQLiteDiagnosticMemoryRepository(session_factory),
         tool_call_audits=SQLiteToolCallAuditRepository(session_factory),
+        agent_traces=SQLiteAgentTraceRepository(session_factory),
         background_jobs=SQLiteBackgroundJobRepository(session_factory),
         feedback=SQLiteUserFeedbackRepository(session_factory),
         mcp_connections=SQLiteMcpConnectionRepository(session_factory),

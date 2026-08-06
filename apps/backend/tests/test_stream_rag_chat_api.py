@@ -180,6 +180,17 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
             f"/chat/sessions/{session['id']}/tool-call-audits",
             headers=headers,
         )
+        trace_repository = app.state.memory_repositories.agent_traces
+        assert trace_repository is not None
+        traces = await trace_repository.list_traces(
+            owner_user_id=user["user"]["id"],
+            resource_type="chat_session",
+            resource_id=session["id"],
+        )
+        spans = await trace_repository.list_spans(
+            owner_user_id=user["user"]["id"],
+            trace_id=traces[0].id,
+        )
 
     assert stream_response.status_code == 200
     assert stream_response.headers["content-type"].startswith("text/event-stream")
@@ -191,6 +202,9 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
         "reference.source",
     ]
     assert events[-1]["event"] == "complete"
+    assert len({event["data"]["traceId"] for event in events}) == 1
+    assert events[1]["data"]["spanId"].startswith("span_")
+    assert events[1]["data"]["spanId"] == events[2]["data"]["spanId"]
     assert events[0]["data"]["delta"] == "I will check the runbook first."
     assert events[1]["data"]["toolCall"]["status"] == "started"
     assert events[3]["data"]["reference"]["chunkId"] == "chunk_1"
@@ -226,6 +240,10 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
     assert audit["status"] == "completed"
     assert audit["arguments"] == {"query": "restart api"}
     assert audit["resultSummary"] == '{"results":["chunk_1"]}'
+    assert traces[0].status == "succeeded"
+    assert traces[0].request_id == "chat-observe"
+    assert [span.kind for span in spans].count("tool") == 1
+    assert spans[0].kind == "agent"
     agent_events = [
         json.loads(record.message)
         for record in caplog.records
@@ -501,6 +519,12 @@ async def test_streaming_chat_emits_safe_error_without_partial_assistant_message
             json={"content": "Will this fail?"},
         )
         detail_response = await client.get(f"/chat/sessions/{session['id']}", headers=headers)
+        trace_repository = app.state.memory_repositories.agent_traces
+        assert trace_repository is not None
+        traces = await trace_repository.list_traces(
+            owner_user_id=user["user"]["id"],
+            resource_id=session["id"],
+        )
 
     assert response.status_code == 200
     assert "sk-secret" not in response.text
@@ -509,6 +533,9 @@ async def test_streaming_chat_emits_safe_error_without_partial_assistant_message
     assert "".join(event["data"]["delta"] for event in events[:-1]) == "partial secret"
     assert events[-1]["event"] == "error"
     assert events[-1]["data"]["error"]["code"] == "SYSTEM_INTERNAL_ERROR"
+    assert events[-1]["data"]["traceId"] == traces[0].id
+    assert traces[0].status == "failed"
+    assert "sk-secret" not in str(traces[0])
     assert [message["role"] for message in detail_response.json()["data"]["messages"]] == ["user"]
 
 

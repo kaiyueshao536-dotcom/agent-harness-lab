@@ -64,10 +64,19 @@ Documents are stored and authorized in SQLite; vector chunks are stored in Milvu
 
 SQLAlchemy repositories isolate services from SQLite details, and Alembic owns schema migration. The durable job runtime persists attempts, leases, events, cancellation, retry policy, and resource ownership. The current implementation is deliberately single-process and is not a distributed queue.
 
+### Unified Agent traces
+
+Chat streaming and AIOps jobs create the same owner-scoped execution model. One trace represents a Chat session turn or diagnostic task; ordered spans represent agent, planner, executor, replanner, tool, retrieval, model, and report stages. Every emitted SSE event carries the execution `traceId`, while the start and completion events for one tool call reuse the same `spanId`.
+
+The authenticated query API exposes `GET /agent-traces` and `GET /agent-traces/{traceId}`. The Vue desktop workspace uses these endpoints for type/status filters, summary metrics, and a sequence-ordered timeline. Cross-owner reads return not found, so a trace identifier does not reveal whether another user's execution exists.
+
+Trace persistence is intentionally an operational projection rather than a transcript. It stores lifecycle status, timing, safe summaries, resource/request identifiers, and redacted structured attributes. It does not store complete prompts, chain-of-thought, model credentials, or raw tool credentials. Trace write failures are logged and execution continues, preventing observability persistence from becoming a Chat or AIOps availability dependency.
+
 ## Trust and authorization boundaries
 
 - Registration, login, and logout are supported; passwords are Argon2 hashes.
 - Knowledge bases, chats, diagnostics, feedback, MCP connections, audit records, and vector search are scoped to the authenticated owner and tenant.
+- Agent traces and spans are owner-scoped and expose only safe operational summaries.
 - MCP tool results and external failures are recorded in tool-call audits.
 - Project secrets live only in ignored local JSON configuration. Committed `*.template.json` files contain no real credentials.
 - CI runs specification, lint, type, test, and build checks without cloud or model secrets.

@@ -35,6 +35,7 @@ from super_ai.retrieval import (
     KnowledgeRetrievalToolInput,
     KnowledgeRetrievalToolResult,
 )
+from super_ai.tracing import AgentTraceContext, AgentTraceService
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class AiopsDiagnosticService:
         cls_region: str,
         cls_topic_id: str,
         case_persistor: DiagnosisCasePersistor | None = None,
+        trace_service: AgentTraceService | None = None,
     ) -> None:
         self._repositories = repositories
         self._llm_provider = llm_provider
@@ -71,6 +73,7 @@ class AiopsDiagnosticService:
         self._cls_region = cls_region
         self._cls_topic_id = cls_topic_id
         self._case_persistor = case_persistor
+        self._trace_service = trace_service or AgentTraceService(repositories.agent_traces)
 
     async def stream(
         self,
@@ -80,7 +83,26 @@ class AiopsDiagnosticService:
     ) -> AsyncIterator[dict[str, object]]:
         """Execute a diagnostic and yield shared SSE payloads in graph order."""
         started_at = monotonic()
-        emit_event(logger, "agent.aiops.started", diagnosticTaskId=task.id)
+        trace = await self._trace_service.start_trace(
+            owner_user_id=task.owner_user_id,
+            execution_type="aiops",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+            metadata={"diagnosticTaskId": task.id},
+        )
+        agent_span_id = await self._trace_service.start_span(
+            trace,
+            kind="agent",
+            name="aiops.graph",
+            attributes={"diagnosticTaskId": task.id},
+        )
+        emit_event(
+            logger,
+            "agent.aiops.started",
+            diagnosticTaskId=task.id,
+            traceId=trace.trace_id,
+            executionType="aiops",
+        )
         await self._repositories.diagnostics.update_task(
             owner_user_id=task.owner_user_id,
             task_id=task.id,
@@ -100,6 +122,7 @@ class AiopsDiagnosticService:
             )
             initial_evidence_ids.append(alert_evidence.id)
         graph = self._build_graph()
+        pending_complete: dict[str, object] | None = None
         initial_state: AiopsDiagnosticState = {
             "owner_user_id": task.owner_user_id,
             "task_id": task.id,
@@ -122,7 +145,13 @@ class AiopsDiagnosticService:
                         continue
                     for event in events:
                         if isinstance(event, dict):
-                            yield cast(dict[str, object], event)
+                            traced_event = await self._trace_event(
+                                trace, cast(dict[str, object], event)
+                            )
+                            if traced_event.get("type") == "complete":
+                                pending_complete = traced_event
+                            else:
+                                yield traced_event
         except Exception as exc:
             await self._repositories.diagnostics.update_task(
                 owner_user_id=task.owner_user_id,
@@ -133,21 +162,98 @@ class AiopsDiagnosticService:
                 },
                 completed_at=_now(),
             )
+            await self._trace_service.finalize_span(
+                trace,
+                span_id=agent_span_id,
+                status="failed",
+                summary="AIOps diagnostic failed",
+                attributes={"errorCategory": exc.__class__.__name__},
+            )
+            await self._trace_service.finalize_trace(
+                trace,
+                status="failed",
+                summary="AIOps diagnostic failed",
+                error_category=exc.__class__.__name__,
+            )
             emit_event(
                 logger,
                 "agent.aiops.failed",
                 diagnosticTaskId=task.id,
+                traceId=trace.trace_id,
+                executionType="aiops",
                 errorCategory=exc.__class__.__name__,
                 durationMs=elapsed_ms(started_at),
             )
-            yield _error_event("SYSTEM_INTERNAL_ERROR")
+            error_event = _error_event("SYSTEM_INTERNAL_ERROR")
+            error_event["traceId"] = trace.trace_id
+            yield error_event
             return
+        updated_task = await self._repositories.diagnostics.get_task(
+            owner_user_id=task.owner_user_id,
+            task_id=task.id,
+        )
+        trace_succeeded = updated_task is not None and updated_task.status == "succeeded"
+        trace_status = "succeeded" if trace_succeeded else "failed"
+        await self._trace_service.finalize_span(
+            trace,
+            span_id=agent_span_id,
+            status=trace_status,
+            summary=f"AIOps diagnostic {trace_status}",
+        )
+        await self._trace_service.finalize_trace(
+            trace,
+            status=trace_status,
+            summary=f"AIOps diagnostic {trace_status}",
+            error_category="DiagnosticExecutionFailed" if trace_status == "failed" else None,
+        )
+        if pending_complete is not None:
+            yield pending_complete
         emit_event(
             logger,
             "agent.aiops.completed",
             diagnosticTaskId=task.id,
+            traceId=trace.trace_id,
+            executionType="aiops",
+            traceStatus=trace_status,
             durationMs=elapsed_ms(started_at),
         )
+
+    async def _trace_event(
+        self,
+        trace: AgentTraceContext,
+        event: dict[str, object],
+    ) -> dict[str, object]:
+        traced_event = dict(event)
+        traced_event["traceId"] = trace.trace_id
+        event_type = str(event.get("type") or "")
+        if event_type == "tool.call":
+            tool_call = event.get("toolCall")
+            if isinstance(tool_call, Mapping):
+                tool_payload = cast(Mapping[str, object], tool_call)
+                span_id = await self._trace_service.record_tool_event(
+                    trace,
+                    tool_call_id=str(tool_payload.get("id") or "unknown"),
+                    tool_name=str(tool_payload.get("name") or "unknown"),
+                    status=str(tool_payload.get("status") or "started"),
+                )
+                traced_event["spanId"] = span_id
+            return traced_event
+        span_kind, span_name = _trace_stage(event_type, event)
+        if span_kind is None:
+            return traced_event
+        span_id = await self._trace_service.start_span(
+            trace,
+            kind=span_kind,
+            name=span_name,
+        )
+        await self._trace_service.finalize_span(
+            trace,
+            span_id=span_id,
+            status="succeeded",
+            summary=f"{span_name} emitted",
+        )
+        traced_event["spanId"] = span_id
+        return traced_event
 
     async def _mcp_client_for(self, owner_user_id: str) -> LocalMcpClient:
         if self._mcp_client_provider is not None:
@@ -944,6 +1050,31 @@ def _sse_event(event_type: str, payload: Mapping[str, object]) -> dict[str, obje
         "timestamp": _now().isoformat(),
         **payload,
     }
+
+
+def _trace_stage(
+    event_type: str,
+    event: Mapping[str, object],
+) -> tuple[str | None, str]:
+    if event_type == "reference.source":
+        return "retrieval", "reference.source"
+    if event_type == "report":
+        return "report", "Report"
+    if event_type != "task.status":
+        return None, ""
+    task = event.get("task")
+    message = ""
+    if isinstance(task, Mapping):
+        message = str(cast(Mapping[str, object], task).get("message") or "")
+    stage_name = message.partition(":")[0].strip().casefold()
+    stage_kinds = {
+        "planner": "planner",
+        "executor": "executor",
+        "replanner": "replanner",
+        "report": "report",
+    }
+    kind = stage_kinds.get(stage_name)
+    return (kind, stage_name.title()) if kind is not None else (None, "")
 
 
 def _task_payload(record: DiagnosticTaskRecord) -> JsonDict:

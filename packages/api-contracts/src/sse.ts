@@ -19,6 +19,7 @@ export interface SseEventBase<TType extends SseEventType> {
   readonly type: TType;
   readonly channel: SseChannel;
   readonly timestamp: string;
+  readonly traceId?: string;
 }
 
 export interface ContentDeltaSseEvent extends SseEventBase<"content.delta"> {
@@ -32,6 +33,7 @@ export interface ReasoningDeltaSseEvent extends SseEventBase<"reasoning.delta"> 
 }
 
 export interface ToolCallSseEvent extends SseEventBase<"tool.call"> {
+  readonly spanId?: string;
   readonly toolCall: {
     readonly id: string;
     readonly name: string;

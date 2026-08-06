@@ -30,6 +30,19 @@ describe("application shell router", () => {
     expect(router.currentRoute.value.path).toBe("/chat");
   });
 
+  it("exposes the protected desktop Agent Trace workspace", async () => {
+    const router = createAppRouter({
+      initialize: vi.fn().mockResolvedValue(undefined),
+      isAuthenticated: () => true
+    });
+
+    await router.push("/traces");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("traces");
+    expect(router.currentRoute.value.meta.title).toBe("执行追踪");
+  });
+
   it("holds dismissible normalized feedback in application state", () => {
     setActivePinia(createPinia());
     const feedback = useFeedbackStore();

@@ -85,6 +85,8 @@ from super_ai.memory.database import (
 )
 from super_ai.memory.repositories import (
     AgentToolCallAuditRecord,
+    AgentTraceRecord,
+    AgentTraceSpanRecord,
     BackgroundJobRecord,
     BackgroundJobRepository,
     ChatMessageRecord,
@@ -985,6 +987,57 @@ def create_app(
             )
         return success_response(request, {"skillId": skill_id, "deleted": True})
 
+    @app.get("/agent-traces")
+    async def list_agent_traces(
+        request: Request,
+        user: Annotated[UserRecord, Depends(_current_user)],
+        execution_type: Annotated[str | None, Query(alias="executionType")] = None,
+        status: Annotated[str | None, Query()] = None,
+        resource_type: Annotated[str | None, Query(alias="resourceType")] = None,
+        resource_id: Annotated[str | None, Query(alias="resourceId")] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> object:
+        if execution_type not in {None, "chat", "aiops"}:
+            raise ApiErrorException("VALIDATION_INVALID_ARGUMENT")
+        if status not in {None, "running", "succeeded", "failed"}:
+            raise ApiErrorException("VALIDATION_INVALID_ARGUMENT")
+        repository = _memory_repositories(request).agent_traces
+        if repository is None:
+            raise ApiErrorException("SYSTEM_UNAVAILABLE")
+        traces = await repository.list_traces(
+            owner_user_id=user.id,
+            execution_type=execution_type,
+            status=status,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
+        )
+        return success_response(
+            request,
+            {"items": [_agent_trace_payload(trace) for trace in traces]},
+        )
+
+    @app.get("/agent-traces/{trace_id}")
+    async def get_agent_trace(
+        request: Request,
+        trace_id: str,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        repository = _memory_repositories(request).agent_traces
+        if repository is None:
+            raise ApiErrorException("SYSTEM_UNAVAILABLE")
+        trace = await repository.get_trace(owner_user_id=user.id, trace_id=trace_id)
+        if trace is None:
+            raise ApiErrorException("BUSINESS_NOT_FOUND")
+        spans = await repository.list_spans(owner_user_id=user.id, trace_id=trace.id)
+        return success_response(
+            request,
+            {
+                "trace": _agent_trace_payload(trace),
+                "spans": [_agent_trace_span_payload(span) for span in spans],
+            },
+        )
+
     @app.get("/chat/sessions")
     async def list_chat_sessions(
         request: Request,
@@ -1180,6 +1233,7 @@ def create_app(
                 content=body.content,
                 metadata=body.metadata,
                 accessible_knowledge_base_ids=_accessible_knowledge_base_ids(user),
+                request_id=getattr(request.state, "request_id", None),
             ):
                 yield encode_sse(event)
 
@@ -2109,6 +2163,45 @@ def _agent_tool_call_audit_payload(record: AgentToolCallAuditRecord) -> dict[str
         "completedAt": record.completed_at.isoformat() if record.completed_at is not None else None,
         "durationMs": record.duration_ms,
         "createdAt": record.created_at.isoformat(),
+    }
+
+
+def _agent_trace_payload(record: AgentTraceRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "executionType": record.execution_type,
+        "resourceType": record.resource_type,
+        "resourceId": record.resource_id,
+        "requestId": record.request_id,
+        "status": record.status,
+        "summary": record.summary,
+        "errorCategory": record.error_category,
+        "metadata": record.metadata,
+        "startedAt": record.started_at.isoformat(),
+        "completedAt": (
+            record.completed_at.isoformat() if record.completed_at is not None else None
+        ),
+        "durationMs": record.duration_ms,
+    }
+
+
+def _agent_trace_span_payload(record: AgentTraceSpanRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "traceId": record.trace_id,
+        "parentSpanId": record.parent_span_id,
+        "externalId": record.external_id,
+        "sequence": record.sequence,
+        "kind": record.kind,
+        "name": record.name,
+        "status": record.status,
+        "summary": record.summary,
+        "attributes": record.attributes,
+        "startedAt": record.started_at.isoformat(),
+        "completedAt": (
+            record.completed_at.isoformat() if record.completed_at is not None else None
+        ),
+        "durationMs": record.duration_ms,
     }
 
 

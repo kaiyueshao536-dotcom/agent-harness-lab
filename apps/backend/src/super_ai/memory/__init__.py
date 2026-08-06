@@ -8,6 +8,9 @@ from super_ai.memory.database import (
 )
 from super_ai.memory.repositories import (
     AgentToolCallAuditRecord,
+    AgentTraceRecord,
+    AgentTraceRepository,
+    AgentTraceSpanRecord,
     ChatMemoryRepository,
     ChatMessageRecord,
     ChatSessionRecord,
@@ -38,8 +41,12 @@ from super_ai.memory.sqlite import (
     SQLiteUserChatSkillRepository,
     create_sqlite_memory_repositories,
 )
+from super_ai.memory.trace_sqlite import SQLiteAgentTraceRepository
 
 __all__ = [
+    "AgentTraceRecord",
+    "AgentTraceRepository",
+    "AgentTraceSpanRecord",
     "ChatMemoryRepository",
     "AgentToolCallAuditRecord",
     "ChatMessageRecord",
@@ -60,6 +67,7 @@ __all__ = [
     "MemoryRepositories",
     "ReportEvidenceLinkRecord",
     "SQLiteChatMemoryRepository",
+    "SQLiteAgentTraceRepository",
     "SQLiteDiagnosticMemoryRepository",
     "SQLiteToolCallAuditRepository",
     "SQLiteUserChatConfigurationRepository",

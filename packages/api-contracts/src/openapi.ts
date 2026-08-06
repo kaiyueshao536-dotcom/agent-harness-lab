@@ -123,6 +123,40 @@ export const OPENAPI_CONTRACT = {
         }
       }
     },
+    "/agent-traces": {
+      get: {
+        operationId: "listAgentTraces",
+        summary: "List owner-scoped Agent execution traces",
+        tags: ["traces"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "executionType", in: "query", schema: { enum: ["chat", "aiops"] } },
+          { name: "status", in: "query", schema: { enum: ["running", "succeeded", "failed"] } },
+          { name: "resourceType", in: "query", schema: { type: "string" } },
+          { name: "resourceId", in: "query", schema: { type: "string" } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } }
+        ],
+        responses: {
+          "200": okResponse("#/components/schemas/AgentTraceListApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
+    "/agent-traces/{traceId}": {
+      get: {
+        operationId: "getAgentTrace",
+        summary: "Read one owner-scoped Agent execution trace",
+        tags: ["traces"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "traceId", in: "path", required: true, schema: { type: "string" } }
+        ],
+        responses: {
+          "200": okResponse("#/components/schemas/AgentTraceDetailApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
     "/config/check": {
       get: {
         operationId: "checkRuntimeConfiguration",
@@ -860,6 +894,64 @@ export const OPENAPI_CONTRACT = {
           traceId: { type: "string" }
         }
       },
+      AgentTrace: {
+        type: "object",
+        required: [
+          "id",
+          "executionType",
+          "resourceType",
+          "resourceId",
+          "status",
+          "metadata",
+          "startedAt"
+        ],
+        properties: {
+          id: { type: "string" },
+          executionType: { enum: ["chat", "aiops"] },
+          resourceType: { type: "string" },
+          resourceId: { type: "string" },
+          requestId: { type: ["string", "null"] },
+          status: { enum: ["running", "succeeded", "failed"] },
+          summary: { type: ["string", "null"] },
+          errorCategory: { type: ["string", "null"] },
+          metadata: { type: "object", additionalProperties: true },
+          startedAt: { type: "string" },
+          completedAt: { type: ["string", "null"] },
+          durationMs: { type: ["integer", "null"], minimum: 0 }
+        }
+      },
+      AgentTraceSpan: {
+        type: "object",
+        required: [
+          "id",
+          "traceId",
+          "sequence",
+          "kind",
+          "name",
+          "status",
+          "attributes",
+          "startedAt"
+        ],
+        properties: {
+          id: { type: "string" },
+          traceId: { type: "string" },
+          parentSpanId: { type: ["string", "null"] },
+          externalId: { type: ["string", "null"] },
+          sequence: { type: "integer", minimum: 1 },
+          kind: {
+            enum: ["agent", "planner", "executor", "replanner", "tool", "retrieval", "model", "report"]
+          },
+          name: { type: "string" },
+          status: { enum: ["running", "succeeded", "failed"] },
+          summary: { type: ["string", "null"] },
+          attributes: { type: "object", additionalProperties: true },
+          startedAt: { type: "string" },
+          completedAt: { type: ["string", "null"] },
+          durationMs: { type: ["integer", "null"], minimum: 0 }
+        }
+      },
+      AgentTraceListApiResponse: { type: "object" },
+      AgentTraceDetailApiResponse: { type: "object" },
       ApiErrorResponse: {
         type: "object",
         required: ["ok", "error", "meta"],

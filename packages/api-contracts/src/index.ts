@@ -24,4 +24,5 @@ export * from "./protected-data";
 export * from "./retrieval";
 export * from "./responses";
 export * from "./sse";
+export * from "./traces";
 export * from "./vector";

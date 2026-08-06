@@ -9,6 +9,8 @@ from sqlalchemy import JSON, create_engine, inspect
 from super_ai.memory.models import Base
 
 REQUIRED_MEMORY_TABLES = {
+    "agent_trace_spans",
+    "agent_traces",
     "document_index_tasks",
     "chat_sessions",
     "chat_messages",
@@ -62,6 +64,9 @@ def test_alembic_upgrade_creates_memory_tables(tmp_path: Path) -> None:
         "ix_user_chat_prompts_owner_updated_at",
         "ix_user_chat_skills_owner_filename",
         "ix_user_chat_skills_owner_updated_at",
+        "ix_agent_traces_owner_started",
+        "ix_agent_traces_owner_resource_started",
+        "ix_agent_trace_spans_owner_trace_sequence",
     } <= index_names
 
 
@@ -84,6 +89,8 @@ def test_memory_metadata_exposes_required_tables_and_json_columns() -> None:
     assert "content" in tables["user_chat_skills"].c
     assert "name" in tables["user_chat_skills"].c
     assert "description" in tables["user_chat_skills"].c
+    assert isinstance(tables["agent_traces"].c["metadata"].type, JSON)
+    assert isinstance(tables["agent_trace_spans"].c["attributes"].type, JSON)
 
 
 def _alembic_config(database_path: Path) -> Config:

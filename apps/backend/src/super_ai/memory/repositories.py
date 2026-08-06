@@ -223,6 +223,47 @@ class AgentToolCallAuditRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentTraceRecord:
+    """Tenant-scoped root record for one Agent execution."""
+
+    id: str
+    owner_user_id: str
+    execution_type: str
+    resource_type: str
+    resource_id: str
+    request_id: str | None
+    status: str
+    summary: str | None
+    error_category: str | None
+    metadata: JsonDict
+    started_at: datetime
+    completed_at: datetime | None
+    duration_ms: int | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class AgentTraceSpanRecord:
+    """Ordered child stage within an Agent trace."""
+
+    id: str
+    owner_user_id: str
+    trace_id: str
+    parent_span_id: str | None
+    external_id: str | None
+    sequence: int
+    kind: str
+    name: str
+    status: str
+    summary: str | None
+    attributes: JsonDict
+    started_at: datetime
+    completed_at: datetime | None
+    duration_ms: int | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class GraphCheckpointRecord:
     id: str
     owner_user_id: str
@@ -958,6 +999,7 @@ class ToolCallAuditRepository(Protocol):
         """Create an in-progress audit associated with an owned chat session."""
         ...
 
+
     async def create_for_diagnostic_task(
         self,
         *,
@@ -1001,6 +1043,86 @@ class ToolCallAuditRepository(Protocol):
     ) -> list[AgentToolCallAuditRecord]:
         """List audits for an owned diagnostic task in chronological order."""
         ...
+
+
+class AgentTraceRepository(Protocol):
+    """Repository contract for tenant-scoped Agent traces and spans."""
+
+    async def create_trace(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+        execution_type: str,
+        resource_type: str,
+        resource_id: str,
+        request_id: str | None = None,
+        metadata: JsonDict | None = None,
+        started_at: datetime | None = None,
+    ) -> AgentTraceRecord: ...
+
+    async def finalize_trace(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+        status: str,
+        summary: str | None = None,
+        error_category: str | None = None,
+        completed_at: datetime | None = None,
+    ) -> AgentTraceRecord | None: ...
+
+    async def create_span(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+        span_id: str,
+        sequence: int,
+        kind: str,
+        name: str,
+        parent_span_id: str | None = None,
+        external_id: str | None = None,
+        attributes: JsonDict | None = None,
+        started_at: datetime | None = None,
+    ) -> AgentTraceSpanRecord: ...
+
+    async def finalize_span(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+        span_id: str,
+        status: str,
+        summary: str | None = None,
+        attributes: JsonDict | None = None,
+        completed_at: datetime | None = None,
+    ) -> AgentTraceSpanRecord | None: ...
+
+    async def get_trace(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+    ) -> AgentTraceRecord | None: ...
+
+    async def list_traces(
+        self,
+        *,
+        owner_user_id: str,
+        execution_type: str | None = None,
+        status: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        limit: int = 50,
+    ) -> list[AgentTraceRecord]: ...
+
+    async def list_spans(
+        self,
+        *,
+        owner_user_id: str,
+        trace_id: str,
+    ) -> list[AgentTraceSpanRecord]: ...
 
 
 class BackgroundJobRepository(Protocol):
@@ -1180,6 +1302,7 @@ class MemoryRepositories:
     document_index_tasks: DocumentIndexTaskRepository
     diagnostics: DiagnosticMemoryRepository
     tool_call_audits: ToolCallAuditRepository | None = None
+    agent_traces: AgentTraceRepository | None = None
     chat_configurations: UserChatConfigurationRepository | None = None
     chat_prompts: UserChatPromptRepository | None = None
     chat_skills: UserChatSkillRepository | None = None
