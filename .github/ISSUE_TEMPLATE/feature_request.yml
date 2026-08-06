@@ -1,0 +1,24 @@
+name: 功能建议
+description: 提议一个聚焦、可验证的新能力
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 描述用户场景和当前限制，不要只描述解决方案。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果
+      description: 什么行为可以证明功能已经完成？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案与边界
+      description: 说明考虑过的替代方案、非目标和兼容性要求。

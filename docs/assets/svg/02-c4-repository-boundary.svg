@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Py 系统架构</title>
+  <desc id="desc">以 Repository Harness 为治理边界，展示体验层、应用与智能层、模型和外部能力、数据与混合检索之间的关系。</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#102449" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#17396f"/>
+    </marker>
+    <marker id="arrowStream" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#1670d2"/>
+    </marker>
+    <marker id="arrowGovern" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0L9 4.5L0 9Z" fill="#647895"/>
+    </marker>
+    <style>
+      text { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #13213b; letter-spacing: 0; }
+      .outer { fill: #fbfcfe; stroke: #aebdd1; stroke-width: 2; stroke-dasharray: 8 7; rx: 14; }
+      .zone { fill: #fff; stroke: #b9c9df; stroke-width: 1.7; rx: 12; filter: url(#shadow); }
+      .zone-blue { stroke: #4885d8; }
+      .zone-teal { stroke: #30918f; }
+      .zone-orange { stroke: #db7a35; }
+      .zone-purple { stroke: #7765b5; }
+      .card { fill: #fff; stroke: #9eb2ce; stroke-width: 1.4; rx: 8; }
+      .card-blue { fill: #f7faff; stroke: #4b83cf; }
+      .card-teal { fill: #f5fbfa; stroke: #2d908d; }
+      .card-orange { fill: #fff9f4; stroke: #d87832; }
+      .card-purple { fill: #faf9fe; stroke: #7765b5; }
+      .heading { font-size: 22px; font-weight: 700; text-anchor: middle; }
+      .title { font-size: 30px; font-weight: 750; text-anchor: middle; }
+      .subtitle { font-size: 14px; fill: #64748b; text-anchor: middle; }
+      .label { font-size: 16px; font-weight: 650; text-anchor: middle; }
+      .small { font-size: 13px; fill: #5c6c84; text-anchor: middle; }
+      .micro { font-size: 12px; fill: #65758c; text-anchor: middle; }
+      .request { fill: none; stroke: #17396f; stroke-width: 2; marker-end: url(#arrow); }
+      .stream { fill: none; stroke: #1670d2; stroke-width: 2; stroke-dasharray: 7 6; marker-end: url(#arrowStream); }
+      .govern { fill: none; stroke: #647895; stroke-width: 1.8; stroke-dasharray: 3 5; marker-end: url(#arrowGovern); }
+      .thin { fill: none; stroke: #6f819b; stroke-width: 1.4; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f4f7fb"/>
+  <rect class="outer" x="24" y="24" width="1552" height="952"/>
+  <rect x="590" y="15" width="420" height="38" fill="#f4f7fb"/>
+  <text class="title" x="800" y="43">Agent Py 系统架构</text>
+  <text class="subtitle" x="800" y="67">Repository Harness · 运行时容器 · Agent 工具 · 数据与外部系统</text>
+
+  <!-- Harness control plane -->
+  <rect class="zone" x="68" y="86" width="1464" height="68"/>
+  <text x="91" y="113" font-size="12" font-weight="700" fill="#647895">REPOSITORY HARNESS</text>
+  <g>
+    <rect class="card" x="88" y="120" width="250" height="24"/><rect class="card" x="356" y="120" width="250" height="24"/>
+    <rect class="card" x="624" y="120" width="250" height="24"/><rect class="card" x="892" y="120" width="250" height="24"/>
+    <rect class="card" x="1160" y="120" width="350" height="24"/>
+    <text class="small" x="213" y="137">AGENTS.md · 仓库行为边界</text>
+    <text class="small" x="481" y="137">OpenSpec · 提案到归档</text>
+    <text class="small" x="749" y="137">Quality Gates · 测试与类型</text>
+    <text class="small" x="1017" y="137">VitePress · 知识与反馈</text>
+    <text class="small" x="1335" y="137">配置 / 启动 / CI / Build · 可重复交付</text>
+  </g>
+
+  <!-- Governance feedback, behind runtime cards -->
+  <path class="govern" d="M481 154V176H200V199"/>
+  <path class="govern" d="M749 154V199"/>
+  <path class="govern" d="M1335 154V176H1370V199"/>
+
+  <!-- Critical connectors, behind cards -->
+  <path class="request" d="M330 298H390"/>
+  <path class="stream" d="M390 337H330"/>
+  <path class="request" d="M1135 264H1235"/>
+  <path class="request" d="M675 455H1235V397"/>
+  <path class="request" d="M1060 410H1235V493"/>
+  <path class="stream" d="M1060 438H1210V570H1235"/>
+  <path class="request" d="M800 610V751H292"/>
+  <path class="request" d="M596 610V701H860V735"/>
+  <path class="request" d="M865 515V716"/>
+
+  <!-- Experience -->
+  <rect class="zone zone-blue" x="68" y="198" width="262" height="440"/>
+  <text class="heading" x="199" y="231" fill="#2d65ac">体验层</text>
+  <rect class="card card-blue" x="91" y="252" width="216" height="350"/>
+  <text class="label" x="199" y="284">Vue 3 Web App</text>
+  <line x1="110" y1="303" x2="288" y2="303" stroke="#d3deed"/>
+  <g font-size="15">
+    <circle cx="120" cy="335" r="4" fill="#4b83cf"/><text x="140" y="340">认证与工作台</text>
+    <circle cx="120" cy="385" r="4" fill="#4b83cf"/><text x="140" y="390">流式聊天</text>
+    <circle cx="120" cy="435" r="4" fill="#4b83cf"/><text x="140" y="440">知识库管理</text>
+    <circle cx="120" cy="485" r="4" fill="#4b83cf"/><text x="140" y="490">AIOps 诊断</text>
+    <circle cx="120" cy="535" r="4" fill="#4b83cf"/><text x="140" y="540">MCP 连接管理</text>
+  </g>
+  <rect x="112" y="561" width="174" height="25" rx="12" fill="#e8f1fd"/>
+  <text class="micro" x="199" y="578" fill="#2d65ac">中文 · 响应式 · 任务状态</text>
+  <text class="small" x="359" y="290" fill="#17396f">HTTP</text>
+  <text class="small" x="359" y="329" fill="#1670d2">SSE</text>
+
+  <!-- Application and intelligence -->
+  <rect class="zone zone-blue" x="390" y="198" width="745" height="440"/>
+  <text class="heading" x="762" y="231" fill="#2d65ac">应用与智能层</text>
+  <rect class="card card-blue" x="414" y="250" width="697" height="82"/>
+  <text class="label" x="762" y="279">FastAPI API / SSE Gateway</text>
+  <line x1="414" y1="292" x2="1111" y2="292" stroke="#b9cbe4"/>
+  <text class="small" x="762" y="315">认证 · User / Tenant Scope · 统一错误契约 · SSE 事件契约</text>
+
+  <rect class="card card-teal" x="414" y="350" width="335" height="205"/>
+  <text class="heading" x="581" y="382" fill="#167b78">Chat Agent</text>
+  <rect class="card card-teal" x="453" y="397" width="257" height="43"/>
+  <text class="label" x="581" y="424">LangChain create_agent</text>
+  <path class="thin" d="M581 440V458M480 458H683M480 458V472M581 458V472M683 458V472"/>
+  <rect class="card" x="430" y="472" width="100" height="56"/><rect class="card" x="531" y="472" width="100" height="56"/><rect class="card" x="632" y="472" width="100" height="56"/>
+  <text class="small" x="480" y="496">知识库检索</text><text class="micro" x="480" y="515">Retrieval Tool</text>
+  <text class="small" x="581" y="496">真实 MCP</text><text class="micro" x="581" y="515">动态 Tools</text>
+  <text class="small" x="682" y="496">当前时间</text><text class="micro" x="682" y="515">Time Tool</text>
+  <text class="micro" x="581" y="545">会话记忆 · 工具审计 · 知识引用</text>
+
+  <rect class="card card-orange" x="769" y="350" width="342" height="205"/>
+  <text class="heading" x="940" y="382" fill="#c66020">AIOps Graph</text>
+  <g>
+    <rect class="card card-orange" x="788" y="403" width="66" height="45"/><rect class="card card-orange" x="868" y="403" width="66" height="45"/>
+    <rect class="card card-orange" x="948" y="403" width="72" height="45"/><rect class="card card-orange" x="1034" y="403" width="58" height="45"/>
+    <text class="micro" x="821" y="430">Planner</text><text class="micro" x="901" y="430">Executor</text>
+    <text class="micro" x="984" y="430">Replanner</text><text class="micro" x="1063" y="430">Report</text>
+    <path d="M854 425H864M934 425H944M1020 425H1030" fill="none" stroke="#c66020" stroke-width="1.5" marker-end="url(#arrow)"/>
+  </g>
+  <rect class="card card-orange" x="826" y="477" width="228" height="45"/>
+  <text class="small" x="940" y="497">SOP + 真实工具 + 证据</text><text class="micro" x="940" y="515">计划 · 执行 · 重规划 · 报告</text>
+  <path d="M901 448V477" fill="none" stroke="#c66020" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text class="micro" x="940" y="545">诊断过程 SSE · 可取消 · 可追溯</text>
+
+  <rect class="card card-blue" x="414" y="573" width="335" height="42"/>
+  <rect class="card card-blue" x="769" y="573" width="342" height="42"/>
+  <text class="label" x="581" y="600">Durable Background Jobs</text>
+  <text class="label" x="940" y="600">Repository Layer</text>
+
+  <!-- Models and external systems -->
+  <rect class="zone zone-blue" x="1235" y="198" width="297" height="440"/>
+  <text class="heading" x="1383" y="231" fill="#2d65ac">模型与外部能力</text>
+  <rect class="card card-blue" x="1262" y="252" width="243" height="103"/>
+  <text class="label" x="1383" y="278">Qwen · OpenAI-compatible</text>
+  <text class="small" x="1383" y="303">Chat · qwen3.7-max</text>
+  <text class="small" x="1383" y="325">Embedding · text-embedding-v4</text>
+  <text class="small" x="1383" y="347">Rerank · qwen3-vl-rerank</text>
+  <rect class="card" x="1262" y="374" width="243" height="58"/>
+  <text class="label" x="1383" y="398">Tencent CLS MCP</text><text class="micro" x="1383" y="417">真实日志查询 · SSE / HTTP</text>
+  <rect class="card" x="1262" y="454" width="243" height="58"/>
+  <text class="label" x="1383" y="478">Prometheus</text><text class="micro" x="1383" y="497">指标查询</text>
+  <rect class="card" x="1262" y="534" width="243" height="58"/>
+  <text class="label" x="1383" y="558">Alertmanager</text><text class="micro" x="1383" y="577">活跃告警</text>
+  <text class="micro" x="1182" y="256" fill="#17396f">LLM</text>
+
+  <!-- Data and retrieval -->
+  <rect class="zone zone-purple" x="68" y="681" width="1464" height="239"/>
+  <text class="heading" x="199" y="716" fill="#62529c">数据与检索</text>
+
+  <rect class="card card-purple" x="102" y="744" width="226" height="91"/>
+  <text class="label" x="215" y="779">SQLite</text>
+  <text class="small" x="215" y="803">用户 · 会话 · 任务 · 审计</text>
+  <text class="micro" x="215" y="824">SQLAlchemy Repository / Alembic</text>
+
+  <rect class="card card-purple" x="378" y="714" width="794" height="117"/>
+  <text class="label" x="775" y="741">Hybrid Retrieval Pipeline</text>
+  <rect class="card" x="403" y="758" width="140" height="50"/><rect class="card" x="572" y="758" width="140" height="50"/>
+  <rect class="card" x="741" y="758" width="140" height="50"/><rect class="card" x="910" y="758" width="225" height="50"/>
+  <text class="small" x="473" y="780">Vector Search</text><text class="micro" x="473" y="797">相似度 / 排名</text>
+  <text class="small" x="642" y="780">BM25L</text><text class="micro" x="642" y="797">分数 / 排名</text>
+  <text class="small" x="811" y="780">RRF Fusion</text><text class="micro" x="811" y="797">k = 60</text>
+  <text class="small" x="1022" y="780">Qwen Rerank</text><text class="micro" x="1022" y="797">分数 / 排名 / 引用</text>
+  <text x="555" y="790" font-size="20" fill="#7765b5">+</text>
+  <path d="M712 783H735M881 783H904" fill="none" stroke="#7765b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect class="card card-purple" x="492" y="856" width="248" height="43"/>
+  <text class="small" x="616" y="882">Index Jobs · Chunk / Embedding</text>
+  <rect class="card card-purple" x="770" y="856" width="248" height="43"/>
+  <text class="small" x="894" y="882">Milvus · Tenant-scoped Vectors</text>
+  <path d="M740 877H764" fill="none" stroke="#7765b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M894 856V837H473V831" fill="none" stroke="#7765b5" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <rect class="card card-purple" x="1227" y="744" width="270" height="91"/>
+  <text class="label" x="1362" y="779">Local Documents</text>
+  <text class="small" x="1362" y="803">Markdown / PDF</text>
+  <text class="micro" x="1362" y="824">上传 · 切分预览 · 删除 · 重建索引</text>
+  <path d="M1227 790H1178" fill="none" stroke="#7765b5" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M1362 835V877H1024" fill="none" stroke="#7765b5" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Legend -->
+  <path class="request" d="M470 948H535"/><text class="small" x="594" y="953">同步请求 / 调用</text>
+  <path class="stream" d="M720 948H785"/><text class="small" x="850" y="953">SSE 流式事件</text>
+  <path class="govern" d="M1000 948H1065"/><text class="small" x="1148" y="953">治理约束 / 反馈</text>
+</svg>

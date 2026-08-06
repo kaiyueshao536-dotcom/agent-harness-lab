@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: OpenSpec, backend, and frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Validate OpenSpec
+        run: npx openspec validate --all
+
+      - name: Type-check shared contracts
+        run: npm run contracts:typecheck
+
+      - name: Type-check frontend
+        run: npm run frontend:typecheck
+
+      - name: Test frontend
+        run: npm run frontend:test
+
+      - name: Build frontend
+        run: npm run frontend:build
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.11.30"
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Install backend dependencies
+        working-directory: apps/backend
+        run: uv sync --frozen --dev
+
+      - name: Lint backend
+        working-directory: apps/backend
+        run: uv run ruff check .
+
+      - name: Type-check backend
+        working-directory: apps/backend
+        run: uv run pyright
+
+      - name: Test backend
+        working-directory: apps/backend
+        run: uv run pytest

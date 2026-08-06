@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Py AI 驱动工程架构</title>
+  <desc id="desc">展示产品需求如何通过 Repository Harness 和 OpenSpec 驱动 AI Coding Agent，经过工程闭环构建整个 Agent Py 项目，并由质量门禁和文档持续反馈。</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#17304f" flood-opacity="0.09"/>
+    </filter>
+    <marker id="blueArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#1768c5"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#16845b"/></marker>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#e85d04"/></marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6044a6"/></marker>
+    <style>
+      text { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #14213d; letter-spacing: 0; }
+      .panel { fill: #fff; stroke-width: 2; rx: 10; filter: url(#shadow); }
+      .side { rx: 9; }
+      .side-num { fill: #fff; font-size: 18px; font-weight: 700; text-anchor: middle; }
+      .side-label { fill: #fff; font-size: 20px; font-weight: 700; text-anchor: middle; }
+      .section-title { font-size: 21px; font-weight: 700; text-anchor: middle; }
+      .card { fill: #fff; stroke-width: 1.5; rx: 7; }
+      .card-title { font-size: 16px; font-weight: 650; text-anchor: middle; }
+      .card-sub { font-size: 12px; fill: #5b6a80; text-anchor: middle; }
+      .micro { font-size: 12px; fill: #66758a; text-anchor: middle; }
+      .blue-flow { fill: none; stroke: #1768c5; stroke-width: 2.2; marker-end: url(#blueArrow); }
+      .green-flow { fill: none; stroke: #16845b; stroke-width: 2.2; marker-end: url(#greenArrow); }
+      .orange-flow { fill: none; stroke: #e85d04; stroke-width: 2.2; marker-end: url(#orangeArrow); }
+      .feedback { fill: none; stroke: #6044a6; stroke-width: 2; stroke-dasharray: 7 6; marker-end: url(#purpleArrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f7f9fc"/>
+  <text x="800" y="43" font-size="32" font-weight="760" text-anchor="middle">Agent Py · AI 驱动工程架构</text>
+  <text x="800" y="69" font-size="14" fill="#66758a" text-anchor="middle">Repository Harness + OpenSpec 驱动 AI 完成从需求到可验证项目的全过程</text>
+
+  <!-- 01 需求与意图 -->
+  <rect class="side" x="30" y="92" width="150" height="112" fill="#1768c5"/>
+  <text class="side-num" x="105" y="126">01</text><text class="side-label" x="105" y="157">需求与意图</text>
+  <text x="105" y="181" fill="#dcecff" font-size="12" text-anchor="middle">Intent</text>
+  <rect class="panel" x="200" y="92" width="1370" height="112" stroke="#1768c5"/>
+  <g stroke="#1768c5">
+    <rect class="card" x="230" y="126" width="180" height="50"/><rect class="card" x="440" y="126" width="180" height="50"/>
+    <rect class="card" x="650" y="126" width="180" height="50"/><rect class="card" x="860" y="126" width="180" height="50"/>
+    <rect x="1120" y="116" width="410" height="70" rx="8" fill="#eef6ff" stroke="#1768c5" stroke-width="2"/>
+  </g>
+  <text class="card-title" x="320" y="157">产品需求</text><text class="card-title" x="530" y="157">功能提案</text>
+  <text class="card-title" x="740" y="157">缺陷修复</text><text class="card-title" x="950" y="157">架构约束</text>
+  <path class="blue-flow" d="M410 151H430M620 151H640M830 151H850M1040 151H1110"/>
+  <text x="1325" y="145" font-size="18" font-weight="700" fill="#1768c5" text-anchor="middle">OpenSpec Change Intent</text>
+  <text class="card-sub" x="1325" y="168">把自然语言目标收敛为可追踪的变更边界</text>
+
+  <!-- 02 Repository Harness -->
+  <rect class="side" x="30" y="232" width="150" height="165" fill="#16845b"/>
+  <text class="side-num" x="105" y="273">02</text><text class="side-label" x="105" y="307">Repository</text><text class="side-label" x="105" y="333">Harness</text>
+  <text x="105" y="360" fill="#d9f5e8" font-size="12" text-anchor="middle">规则 · 上下文 · 控制面</text>
+  <rect class="panel" x="200" y="232" width="1370" height="165" stroke="#16845b"/>
+  <text class="section-title" x="885" y="264" fill="#16845b">AI 的仓库操作系统</text>
+  <g stroke="#16845b">
+    <rect class="card" x="225" y="283" width="170" height="82"/><rect class="card" x="415" y="283" width="565" height="82"/>
+    <rect class="card" x="1000" y="283" width="170" height="82"/><rect class="card" x="1190" y="283" width="170" height="82"/>
+    <rect class="card" x="1380" y="283" width="165" height="82"/>
+  </g>
+  <text class="card-title" x="310" y="316">AGENTS.md</text><text class="card-sub" x="310" y="338">行为规则与安全边界</text><text class="card-sub" x="310" y="355">项目结构与工作方式</text>
+  <rect x="435" y="297" width="525" height="50" rx="7" fill="#effaf5" stroke="#16845b" stroke-width="1.5"/>
+  <text x="697" y="316" font-size="16" font-weight="700" fill="#16845b" text-anchor="middle">OpenSpec Workflow</text>
+  <text x="697" y="338" font-size="14" text-anchor="middle">Proposal  →  Design  →  Specs  →  Tasks</text>
+  <text class="micro" x="697" y="360">需求控制面：告诉 AI 为什么做、做什么、如何验收</text>
+  <text class="card-title" x="1085" y="316">Skills</text><text class="card-sub" x="1085" y="338">按需加载专业能力</text><text class="card-sub" x="1085" y="355">OpenSpec · UI · LangChain</text>
+  <text class="card-title" x="1275" y="316">项目上下文</text><text class="card-sub" x="1275" y="338">代码 · 文档 · 历史</text><text class="card-sub" x="1275" y="355">现有模式与依赖</text>
+  <text class="card-title" x="1462" y="316">工程约束</text><text class="card-sub" x="1462" y="338">编码规范 · 配置</text><text class="card-sub" x="1462" y="355">权限 · 集成边界</text>
+
+  <!-- Main drive -->
+  <path class="blue-flow" d="M1325 186V217H885V225"/>
+  <path class="green-flow" d="M885 397V419"/>
+  <rect x="760" y="400" width="250" height="22" rx="11" fill="#f7f9fc"/>
+  <text x="885" y="416" font-size="12" font-weight="650" fill="#16845b" text-anchor="middle">Artifacts + Rules + Context</text>
+
+  <!-- 03 AI Engineering Loop -->
+  <rect class="side" x="30" y="426" width="150" height="220" fill="#e85d04"/>
+  <text class="side-num" x="105" y="475">03</text><text class="side-label" x="105" y="509">AI 工程闭环</text>
+  <text x="105" y="539" fill="#fff0e6" font-size="12" text-anchor="middle">Analyze · Build · Verify</text>
+  <text x="105" y="566" fill="#fff0e6" font-size="12" text-anchor="middle">修改真实仓库</text>
+  <rect class="panel" x="200" y="426" width="1370" height="220" stroke="#e85d04"/>
+  <rect x="585" y="447" width="600" height="56" rx="8" fill="#fff5ed" stroke="#e85d04" stroke-width="2"/>
+  <text x="885" y="472" font-size="21" font-weight="750" fill="#d95200" text-anchor="middle">AI Coding Agent</text>
+  <text class="card-sub" x="885" y="491">读取规格与仓库状态 · 调用工具 · 编辑代码 · 运行验证 · 沉淀知识</text>
+
+  <g stroke="#e85d04">
+    <rect class="card" x="235" y="536" width="175" height="64"/><rect class="card" x="430" y="536" width="175" height="64"/>
+    <rect class="card" x="625" y="536" width="175" height="64"/><rect class="card" x="820" y="536" width="175" height="64"/>
+    <rect class="card" x="1015" y="536" width="175" height="64"/><rect class="card" x="1210" y="536" width="175" height="64"/>
+    <rect class="card" x="1405" y="536" width="135" height="64"/>
+  </g>
+  <text class="card-title" x="322" y="562">Analyze</text><text class="card-sub" x="322" y="583">理解代码与变更</text>
+  <text class="card-title" x="517" y="562">Plan</text><text class="card-sub" x="517" y="583">任务与风险排序</text>
+  <text class="card-title" x="712" y="562">Implement</text><text class="card-sub" x="712" y="583">实现代码与契约</text>
+  <text class="card-title" x="907" y="562">Test</text><text class="card-sub" x="907" y="583">自动化与端上验证</text>
+  <text class="card-title" x="1102" y="562">Verify</text><text class="card-sub" x="1102" y="583">对照规格验收</text>
+  <text class="card-title" x="1297" y="562">Archive</text><text class="card-sub" x="1297" y="583">归档规格与文档</text>
+  <text class="card-title" x="1472" y="562">Git</text><text class="card-sub" x="1472" y="583">提交与推送</text>
+  <path class="orange-flow" d="M410 568H420M605 568H615M800 568H810M995 568H1005M1190 568H1200M1385 568H1395"/>
+  <path class="orange-flow" d="M1472 600V624H322V610"/>
+  <text x="885" y="637" font-size="12" fill="#c55a19" text-anchor="middle">失败与新证据触发重新分析，直到规格、实现与验证一致</text>
+
+  <!-- 04 Whole project output -->
+  <rect class="side" x="30" y="674" width="150" height="150" fill="#128995"/>
+  <text class="side-num" x="105" y="713">04</text><text class="side-label" x="105" y="747">整个项目</text>
+  <text x="105" y="775" fill="#d9f8fa" font-size="12" text-anchor="middle">Project Outputs</text>
+  <rect class="panel" x="200" y="674" width="1370" height="150" stroke="#128995"/>
+  <text class="section-title" x="885" y="706" fill="#128995">AI 在同一仓库中协同构建全部能力</text>
+  <g stroke="#128995">
+    <rect class="card" x="225" y="729" width="150" height="66"/><rect class="card" x="392" y="729" width="150" height="66"/>
+    <rect class="card" x="559" y="729" width="150" height="66"/><rect class="card" x="726" y="729" width="150" height="66"/>
+    <rect class="card" x="893" y="729" width="150" height="66"/><rect class="card" x="1060" y="729" width="150" height="66"/>
+    <rect class="card" x="1227" y="729" width="150" height="66"/><rect class="card" x="1394" y="729" width="150" height="66"/>
+  </g>
+  <text class="card-title" x="300" y="755">Vue 3 前端</text><text class="card-sub" x="300" y="777">中文交互界面</text>
+  <text class="card-title" x="467" y="755">FastAPI 后端</text><text class="card-sub" x="467" y="777">API / SSE / Auth</text>
+  <text class="card-title" x="634" y="755">Chat Agent</text><text class="card-sub" x="634" y="777">LangChain Tools</text>
+  <text class="card-title" x="801" y="755">AIOps Graph</text><text class="card-sub" x="801" y="777">LangGraph 诊断</text>
+  <text class="card-title" x="968" y="755">Knowledge RAG</text><text class="card-sub" x="968" y="777">Hybrid Retrieval</text>
+  <text class="card-title" x="1135" y="755">MCP 集成</text><text class="card-sub" x="1135" y="777">真实外部工具</text>
+  <text class="card-title" x="1302" y="755">SQLite / Milvus</text><text class="card-sub" x="1302" y="777">持久化与向量</text>
+  <text class="card-title" x="1469" y="755">Scripts / Infra</text><text class="card-sub" x="1469" y="777">本地启动与依赖</text>
+  <path class="orange-flow" d="M885 646V666"/>
+
+  <!-- 05 Quality and knowledge feedback -->
+  <rect class="side" x="30" y="852" width="150" height="110" fill="#6044a6"/>
+  <text class="side-num" x="105" y="884">05</text><text class="side-label" x="105" y="916">质量与知识</text><text class="side-label" x="105" y="942">反馈</text>
+  <rect class="panel" x="200" y="852" width="1370" height="110" stroke="#6044a6"/>
+  <g stroke="#6044a6">
+    <rect class="card" x="225" y="880" width="220" height="55"/><rect class="card" x="465" y="880" width="220" height="55"/>
+    <rect class="card" x="705" y="880" width="220" height="55"/><rect class="card" x="945" y="880" width="220" height="55"/>
+    <rect class="card" x="1185" y="880" width="170" height="55"/><rect class="card" x="1375" y="880" width="170" height="55"/>
+  </g>
+  <text class="card-title" x="335" y="903">pytest · Vitest</text><text class="card-sub" x="335" y="922">行为与回归测试</text>
+  <text class="card-title" x="575" y="903">Ruff · Pyright</text><text class="card-sub" x="575" y="922">代码与类型质量</text>
+  <text class="card-title" x="815" y="903">Build · Validate</text><text class="card-sub" x="815" y="922">构建与 OpenSpec 校验</text>
+  <text class="card-title" x="1055" y="903">VitePress Docs</text><text class="card-sub" x="1055" y="922">架构与能力知识库</text>
+  <text class="card-title" x="1270" y="903">Git History</text><text class="card-sub" x="1270" y="922">可追溯变更</text>
+  <text class="card-title" x="1460" y="903">Runtime Evidence</text><text class="card-sub" x="1460" y="922">端上真实验证</text>
+
+  <!-- Feedback to Harness -->
+  <path class="feedback" d="M1545 907H1582V314H1553"/>
+  <path class="feedback" d="M1055 852V838H1575"/>
+  <rect x="1338" y="830" width="220" height="22" rx="11" fill="#f7f9fc"/>
+  <text x="1448" y="846" font-size="12" font-weight="650" fill="#6044a6" text-anchor="middle">验证结果与知识回流 Harness</text>
+
+  <!-- Main-axis caption -->
+  <rect x="210" y="211" width="450" height="19" rx="9" fill="#f7f9fc"/>
+  <text x="435" y="225" font-size="11" fill="#1768c5" text-anchor="middle">需求进入 OpenSpec，形成 AI 可执行、可验证的工程契约</text>
+</svg>

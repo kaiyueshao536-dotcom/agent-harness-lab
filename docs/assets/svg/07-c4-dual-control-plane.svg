@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Py AI 驱动工程架构第七版</title>
+  <desc id="desc">第二版 C4 容器风格，展示 Repository Harness、OpenSpec 和 Superpowers 共同驱动 AI Coding Agent 构建整个项目。</desc>
+  <defs>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#17304f" flood-opacity=".08"/></filter>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#17396f"/></marker>
+    <marker id="d" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#657895"/></marker>
+    <style>
+      text{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;fill:#14213d;letter-spacing:0}.outer{fill:#fbfcfe;stroke:#aebdd1;stroke-width:2;stroke-dasharray:8 7;rx:14}.zone{fill:#fff;stroke:#5d88c7;stroke-width:1.7;rx:11;filter:url(#s)}.card{fill:#fff;stroke:#9eb2ce;stroke-width:1.4;rx:8}.blue{fill:#f6f9fe;stroke:#4d83ce}.green{fill:#f4fbf8;stroke:#2f8d6f}.orange{fill:#fff8f2;stroke:#d97935}.violet{fill:#fbf7fe;stroke:#8a55ad}.purple{fill:#faf9fe;stroke:#7865b5}.h{font-size:21px;font-weight:700;text-anchor:middle}.ct{font-size:15px;font-weight:650;text-anchor:middle}.sub{font-size:12px;fill:#607087;text-anchor:middle}.req{fill:none;stroke:#17396f;stroke-width:2;marker-end:url(#a)}.gov{fill:none;stroke:#657895;stroke-width:1.8;stroke-dasharray:3 5;marker-end:url(#d)}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="#f4f7fb"/>
+  <rect class="outer" x="25" y="25" width="1550" height="950"/>
+  <rect x="475" y="14" width="650" height="42" fill="#f4f7fb"/><text x="800" y="43" font-size="30" font-weight="760" text-anchor="middle">Agent Py · AI Engineering System</text><text x="800" y="68" font-size="14" fill="#66758a" text-anchor="middle">第七版 · Harness + OpenSpec + Superpowers</text>
+
+  <rect class="zone" x="70" y="88" width="1460" height="92"/>
+  <text x="94" y="114" font-size="12" font-weight="700" fill="#657895">REPOSITORY HARNESS · 所有 AI 行为均在仓库边界内发生</text>
+  <g><rect class="card" x="90" y="126" width="240" height="35"/><rect class="card" x="350" y="126" width="240" height="35"/><rect class="card" x="610" y="126" width="240" height="35"/><rect class="card" x="870" y="126" width="240" height="35"/><rect class="card" x="1130" y="126" width="180" height="35"/><rect class="card" x="1330" y="126" width="180" height="35"/></g>
+  <text class="ct" x="210" y="150">AGENTS.md</text><text class="ct" x="470" y="150">Project Context</text><text class="ct" x="730" y="150">Skills / Tools</text><text class="ct" x="990" y="150">Quality Gates</text><text class="ct" x="1220" y="150">VitePress</text><text class="ct" x="1420" y="150">CI / Build</text>
+  <path class="gov" d="M730 180V207H800V224"/><path class="gov" d="M990 180V207H800"/>
+
+  <path class="req" d="M300 390H350"/><path class="req" d="M805 320H850"/><path class="req" d="M805 475H850"/><path class="req" d="M1150 390H1200"/><path class="req" d="M1010 576V650"/><path class="gov" d="M800 924V947H470V180"/>
+
+  <rect class="zone" x="70" y="225" width="230" height="330"/>
+  <text class="h" x="185" y="262">Intent</text>
+  <g><rect class="card blue" x="95" y="293" width="180" height="48"/><rect class="card blue" x="95" y="357" width="180" height="48"/><rect class="card blue" x="95" y="421" width="180" height="48"/></g>
+  <text class="ct" x="185" y="323">Feature / Fix</text><text class="ct" x="185" y="387">Architecture</text><text class="ct" x="185" y="451">User Feedback</text><text class="sub" x="185" y="503">目标 · 范围 · 约束</text><text class="sub" x="185" y="523">进入变更控制面</text>
+
+  <rect class="zone" x="350" y="225" width="455" height="330"/>
+  <text class="h" x="577" y="262">Engineering Control Planes</text>
+  <rect class="card green" x="380" y="290" width="395" height="105"/>
+  <text class="h" x="577" y="320" fill="#25815f">OpenSpec · What</text><text class="ct" x="577" y="346">Proposal → Design → Specs → Tasks</text><text class="sub" x="577" y="370">定义为什么做、做什么、如何验收</text>
+  <rect class="card violet" x="380" y="420" width="395" height="105"/>
+  <text class="h" x="577" y="450" fill="#7a3ea3">Superpowers · How</text><text class="ct" x="577" y="476">Brainstorm → Plan → TDD → Debug → Verify</text><text class="sub" x="577" y="500">提供稳定、可复用的 AI 工程方法</text>
+
+  <rect class="zone" x="850" y="225" width="300" height="351"/>
+  <text class="h" x="1000" y="262" fill="#c56325">AI Coding Agent</text>
+  <rect class="card orange" x="880" y="292" width="240" height="50"/><text class="ct" x="1000" y="314">Read &amp; Analyze</text><text class="sub" x="1000" y="332">规则 · 规格 · 仓库</text>
+  <rect class="card orange" x="880" y="356" width="240" height="50"/><text class="ct" x="1000" y="378">Plan &amp; Implement</text><text class="sub" x="1000" y="396">代码 · 测试 · 契约</text>
+  <rect class="card orange" x="880" y="420" width="240" height="50"/><text class="ct" x="1000" y="442">Test &amp; Debug</text><text class="sub" x="1000" y="460">自动化 · 浏览器 · 修复</text>
+  <rect class="card orange" x="880" y="484" width="240" height="50"/><text class="ct" x="1000" y="506">Verify &amp; Archive</text><text class="sub" x="1000" y="524">验收 · 文档 · Git</text>
+  <text class="sub" x="1000" y="558">循环执行，直到证据证明完成</text>
+
+  <rect class="zone" x="1200" y="225" width="330" height="351"/>
+  <text class="h" x="1365" y="262">Repository Outputs</text>
+  <g><rect class="card blue" x="1230" y="292" width="270" height="48"/><rect class="card blue" x="1230" y="356" width="270" height="48"/><rect class="card green" x="1230" y="420" width="270" height="48"/><rect class="card purple" x="1230" y="484" width="270" height="48"/></g>
+  <text class="ct" x="1365" y="322">Application Code</text><text class="ct" x="1365" y="386">Tests / Contracts</text><text class="ct" x="1365" y="450">OpenSpec / Documentation</text><text class="ct" x="1365" y="514">Git Commit / Push</text><text class="sub" x="1365" y="558">持续积累为下一轮上下文</text>
+
+  <rect class="zone" x="70" y="650" width="1460" height="225"/>
+  <text class="h" x="800" y="683">Agent Py · Whole Project</text>
+  <g><rect class="card blue" x="100" y="712" width="205" height="62"/><rect class="card blue" x="325" y="712" width="205" height="62"/><rect class="card green" x="550" y="712" width="205" height="62"/><rect class="card orange" x="775" y="712" width="205" height="62"/><rect class="card green" x="1000" y="712" width="205" height="62"/><rect class="card blue" x="1225" y="712" width="275" height="62"/></g>
+  <text class="ct" x="202" y="739">Vue 3 Frontend</text><text class="sub" x="202" y="758">中文体验</text><text class="ct" x="427" y="739">FastAPI Backend</text><text class="sub" x="427" y="758">API / SSE / Auth</text><text class="ct" x="652" y="739">Chat Agent</text><text class="sub" x="652" y="758">LangChain Tools</text><text class="ct" x="877" y="739">AIOps Graph</text><text class="sub" x="877" y="758">LangGraph</text><text class="ct" x="1102" y="739">Knowledge RAG</text><text class="sub" x="1102" y="758">Hybrid Retrieval</text><text class="ct" x="1362" y="739">Models / MCP / External</text><text class="sub" x="1362" y="758">Qwen · CLS · Metrics</text>
+  <g><rect class="card purple" x="155" y="798" width="250" height="48"/><rect class="card purple" x="425" y="798" width="250" height="48"/><rect class="card purple" x="695" y="798" width="250" height="48"/><rect class="card purple" x="965" y="798" width="250" height="48"/><rect class="card purple" x="1235" y="798" width="250" height="48"/></g>
+  <text class="ct" x="280" y="828">SQLite / Milvus</text><text class="ct" x="550" y="828">Durable Jobs</text><text class="ct" x="820" y="828">Scripts / Infra</text><text class="ct" x="1090" y="828">API Contracts</text><text class="ct" x="1360" y="828">Docs / Spec Archive</text>
+
+  <rect class="zone" x="240" y="900" width="1120" height="47"/>
+  <text class="ct" x="800" y="929">Evidence Feedback · Tests · Types · Build · Browser · OpenSpec Validate · VitePress · Runtime</text>
+</svg>

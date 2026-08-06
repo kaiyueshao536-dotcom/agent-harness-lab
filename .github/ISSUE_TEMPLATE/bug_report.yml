@@ -1,0 +1,37 @@
+name: Bug 报告
+description: 报告可复现的缺陷（安全问题请使用 Security Advisory）
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 请先移除日志、截图和配置中的凭据与真实用户数据。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？预期行为是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动……
+        2. 访问……
+        3. 观察到……
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: 操作系统、Python、Node 和浏览器版本
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已脱敏证据
+      description: 可粘贴 request ID、错误类别或最小日志；不要粘贴凭据和真实内容。
