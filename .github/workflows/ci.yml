@@ -51,6 +51,7 @@ jobs:
         run: |
           cp config/project.template.json config/project.json
           cp config/user.project.template.json config/user.project.json
+          node --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; const path = 'config/user.project.json'; const config = JSON.parse(readFileSync(path, 'utf8')); config.llm.apiKey = 'ci-placeholder-not-a-secret'; writeFileSync(path, JSON.stringify(config));"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v9.0.0
