@@ -23,7 +23,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rank-bm25>=0.2.2",
     "sqlalchemy>=2.0.51",
-    "tencentcloud-cls-sdk-python==1.0.4",
+    "tencentcloud-cls-sdk-python==1.0.8",
     "uvicorn>=0.35.0",
 ]
 
