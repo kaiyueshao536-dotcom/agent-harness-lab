@@ -264,6 +264,89 @@ class AgentTraceSpanRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationDatasetRecord:
+    id: str
+    owner_user_id: str
+    name: str
+    version: str
+    description: str
+    gate: JsonDict
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationCaseRecord:
+    id: str
+    dataset_id: str
+    owner_user_id: str
+    sequence: int
+    name: str
+    execution_type: str
+    input_summary: str
+    rules: list[JsonDict]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationCaseDraft:
+    id: str
+    sequence: int
+    name: str
+    execution_type: str
+    input_summary: str
+    rules: list[JsonDict]
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationRunRecord:
+    id: str
+    dataset_id: str
+    owner_user_id: str
+    candidate_label: str
+    baseline_run_id: str | None
+    status: str
+    gate_status: str
+    pass_rate: float
+    average_score: float
+    average_duration_ms: float | None
+    total_tool_calls: int
+    baseline_delta: JsonDict
+    gate_failures: list[str]
+    failure_reason: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationCaseResultRecord:
+    id: str
+    run_id: str
+    case_id: str
+    owner_user_id: str
+    sequence: int
+    trace_id: str
+    status: str
+    score: float
+    output_summary: str
+    metrics: JsonDict
+    checks: list[JsonDict]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationCaseResultDraft:
+    id: str
+    case_id: str
+    sequence: int
+    trace_id: str
+    status: str
+    score: float
+    output_summary: str
+    metrics: JsonDict
+    checks: list[JsonDict]
+
+
+@dataclass(frozen=True, slots=True)
 class GraphCheckpointRecord:
     id: str
     owner_user_id: str
@@ -1125,6 +1208,64 @@ class AgentTraceRepository(Protocol):
     ) -> list[AgentTraceSpanRecord]: ...
 
 
+class EvaluationRepository(Protocol):
+    """Repository contract for immutable datasets and completed evaluation runs."""
+
+    async def create_dataset(
+        self,
+        *,
+        owner_user_id: str,
+        dataset_id: str,
+        name: str,
+        version: str,
+        description: str,
+        gate: JsonDict,
+        cases: list[EvaluationCaseDraft],
+        created_at: datetime | None = None,
+    ) -> EvaluationDatasetRecord: ...
+
+    async def get_dataset(
+        self, *, owner_user_id: str, dataset_id: str
+    ) -> EvaluationDatasetRecord | None: ...
+
+    async def list_datasets(self, *, owner_user_id: str) -> list[EvaluationDatasetRecord]: ...
+
+    async def list_cases(
+        self, *, owner_user_id: str, dataset_id: str
+    ) -> list[EvaluationCaseRecord]: ...
+
+    async def create_run(
+        self,
+        *,
+        owner_user_id: str,
+        run_id: str,
+        dataset_id: str,
+        candidate_label: str,
+        baseline_run_id: str | None,
+        gate_status: str,
+        pass_rate: float,
+        average_score: float,
+        average_duration_ms: float | None,
+        total_tool_calls: int,
+        baseline_delta: JsonDict,
+        gate_failures: list[str],
+        results: list[EvaluationCaseResultDraft],
+        created_at: datetime | None = None,
+    ) -> EvaluationRunRecord: ...
+
+    async def get_run(
+        self, *, owner_user_id: str, run_id: str
+    ) -> EvaluationRunRecord | None: ...
+
+    async def list_runs(
+        self, *, owner_user_id: str, dataset_id: str | None = None
+    ) -> list[EvaluationRunRecord]: ...
+
+    async def list_results(
+        self, *, owner_user_id: str, run_id: str
+    ) -> list[EvaluationCaseResultRecord]: ...
+
+
 class BackgroundJobRepository(Protocol):
     """Repository contract for durable leased jobs and their event log."""
 
@@ -1303,6 +1444,7 @@ class MemoryRepositories:
     diagnostics: DiagnosticMemoryRepository
     tool_call_audits: ToolCallAuditRepository | None = None
     agent_traces: AgentTraceRepository | None = None
+    evaluations: EvaluationRepository | None = None
     chat_configurations: UserChatConfigurationRepository | None = None
     chat_prompts: UserChatPromptRepository | None = None
     chat_skills: UserChatSkillRepository | None = None

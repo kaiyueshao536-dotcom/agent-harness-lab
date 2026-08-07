@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from super_ai.evaluation.models import EvaluationRule
+
 
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -82,3 +84,42 @@ class McpConnectionMutationRequest(BaseModel):
     enabled: bool = True
     timeout_seconds: int = Field(default=15, alias="timeoutSeconds", ge=1, le=300)
     retries: int = Field(default=1, ge=0, le=5)
+
+
+class EvaluationGateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    min_pass_rate: float = Field(default=1.0, alias="minPassRate", ge=0.0, le=1.0)
+    min_average_score: float = Field(default=1.0, alias="minAverageScore", ge=0.0, le=1.0)
+    max_duration_regression_percent: float | None = Field(
+        default=None,
+        alias="maxDurationRegressionPercent",
+        ge=0.0,
+    )
+
+
+class EvaluationCaseRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    execution_type: Literal["chat", "aiops"] = Field(alias="executionType")
+    input_summary: str = Field(alias="inputSummary", min_length=1, max_length=500)
+    rules: list[EvaluationRule] = Field(min_length=1, max_length=20)
+
+
+class CreateEvaluationDatasetRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    version: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2000)
+    gate: EvaluationGateRequest
+    cases: list[EvaluationCaseRequest] = Field(min_length=1, max_length=100)
+
+
+class RunEvaluationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    candidate_label: str = Field(alias="candidateLabel", min_length=1, max_length=160)
+    baseline_run_id: str | None = Field(default=None, alias="baselineRunId", max_length=80)
+    trace_bindings: dict[str, str] = Field(alias="traceBindings", min_length=1, max_length=100)

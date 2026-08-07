@@ -27,6 +27,9 @@ dependencies = [
     "uvicorn>=0.35.0",
 ]
 
+[project.scripts]
+super-ai-eval = "super_ai.evaluation.cli:main"
+
 [tool.uv]
 override-dependencies = [
     "lz4>=4.3.3,<5",
@@ -36,6 +39,7 @@ override-dependencies = [
 
 [dependency-groups]
 dev = [
+  "editables>=0.5",
   "pyright>=1.1.400",
   "pytest>=8.3.0",
   "pytest-asyncio>=0.24.0",
@@ -48,6 +52,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/super_ai"]
+
+[tool.hatch.build]
+dev-mode-exact = true
 
 [tool.pytest.ini_options]
 addopts = "-q"

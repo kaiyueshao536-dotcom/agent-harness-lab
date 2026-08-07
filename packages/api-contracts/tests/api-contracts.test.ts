@@ -623,6 +623,11 @@ describe("OpenAPI contract", () => {
         "/auth/me",
         "/agent-traces",
         "/agent-traces/{traceId}",
+        "/evaluations/datasets",
+        "/evaluations/datasets/{datasetId}",
+        "/evaluations/datasets/{datasetId}/runs",
+        "/evaluations/runs",
+        "/evaluations/runs/{runId}",
         "/chat/sessions",
         "/chat/sessions/{sessionId}",
         "/chat/sessions/{sessionId}/messages",
@@ -648,6 +653,12 @@ describe("OpenAPI contract", () => {
     const protectedOperations = [
       OPENAPI_CONTRACT.paths["/agent-traces"]?.get,
       OPENAPI_CONTRACT.paths["/agent-traces/{traceId}"]?.get,
+      OPENAPI_CONTRACT.paths["/evaluations/datasets"]?.get,
+      OPENAPI_CONTRACT.paths["/evaluations/datasets"]?.post,
+      OPENAPI_CONTRACT.paths["/evaluations/datasets/{datasetId}"]?.get,
+      OPENAPI_CONTRACT.paths["/evaluations/datasets/{datasetId}/runs"]?.post,
+      OPENAPI_CONTRACT.paths["/evaluations/runs"]?.get,
+      OPENAPI_CONTRACT.paths["/evaluations/runs/{runId}"]?.get,
       OPENAPI_CONTRACT.paths["/chat/sessions"]?.post,
       OPENAPI_CONTRACT.paths["/chat/sessions"]?.get,
       OPENAPI_CONTRACT.paths["/chat/sessions/{sessionId}"]?.get,
@@ -763,5 +774,18 @@ describe("OpenAPI contract", () => {
     expect(OPENAPI_CONTRACT.components.schemas.AgentTraceSpan).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.AgentTraceListApiResponse).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.AgentTraceDetailApiResponse).toBeDefined();
+  });
+
+  it("describes versioned evaluation datasets and explainable runs", () => {
+    expect(OPENAPI_CONTRACT.paths["/evaluations/datasets"]?.post?.operationId).toBe(
+      "createEvaluationDataset"
+    );
+    expect(
+      OPENAPI_CONTRACT.paths["/evaluations/datasets/{datasetId}/runs"]?.post?.operationId
+    ).toBe("runEvaluationDataset");
+    expect(OPENAPI_CONTRACT.components.schemas.EvaluationRule).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.EvaluationGate).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.EvaluationCaseResult).toBeDefined();
+    expect(OPENAPI_CONTRACT.components.schemas.EvaluationRunDetailApiResponse).toBeDefined();
   });
 });

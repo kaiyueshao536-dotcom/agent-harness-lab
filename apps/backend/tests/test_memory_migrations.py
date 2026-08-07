@@ -22,6 +22,10 @@ REQUIRED_MEMORY_TABLES = {
     "user_chat_configurations",
     "user_chat_prompts",
     "user_chat_skills",
+    "evaluation_datasets",
+    "evaluation_cases",
+    "evaluation_runs",
+    "evaluation_case_results",
 }
 
 
@@ -67,6 +71,10 @@ def test_alembic_upgrade_creates_memory_tables(tmp_path: Path) -> None:
         "ix_agent_traces_owner_started",
         "ix_agent_traces_owner_resource_started",
         "ix_agent_trace_spans_owner_trace_sequence",
+        "ix_evaluation_datasets_owner_created",
+        "ix_evaluation_cases_owner_dataset_sequence",
+        "ix_evaluation_runs_owner_dataset_created",
+        "ix_evaluation_case_results_owner_run_sequence",
     } <= index_names
 
 
@@ -91,6 +99,9 @@ def test_memory_metadata_exposes_required_tables_and_json_columns() -> None:
     assert "description" in tables["user_chat_skills"].c
     assert isinstance(tables["agent_traces"].c["metadata"].type, JSON)
     assert isinstance(tables["agent_trace_spans"].c["attributes"].type, JSON)
+    assert isinstance(tables["evaluation_datasets"].c["gate"].type, JSON)
+    assert isinstance(tables["evaluation_cases"].c["rules"].type, JSON)
+    assert isinstance(tables["evaluation_case_results"].c["checks"].type, JSON)
 
 
 def _alembic_config(database_path: Path) -> Config:

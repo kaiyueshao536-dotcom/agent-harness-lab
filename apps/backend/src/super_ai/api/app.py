@@ -67,6 +67,8 @@ from super_ai.documents import (
     extract_indexable_text,
 )
 from super_ai.error_catalog import ERROR_DEFINITIONS
+from super_ai.evaluation import EvaluationCaseDefinition, EvaluationGate, EvaluationHarnessService
+from super_ai.evaluation.service import EvaluationBindingError, EvaluationNotFoundError
 from super_ai.feedback import FeedbackError, UserFeedbackService
 from super_ai.jobs import BackgroundJobContext, BackgroundJobRuntime, JobCancelled
 from super_ai.llm import (
@@ -83,6 +85,7 @@ from super_ai.memory.database import (
     create_memory_session_factory,
     load_memory_database_settings,
 )
+from super_ai.memory.evaluation_sqlite import EvaluationDatasetVersionConflict
 from super_ai.memory.repositories import (
     AgentToolCallAuditRecord,
     AgentTraceRecord,
@@ -97,6 +100,11 @@ from super_ai.memory.repositories import (
     DiagnosticStepRecord,
     DiagnosticTaskRecord,
     DocumentIndexTaskRecord,
+    EvaluationCaseRecord,
+    EvaluationCaseResultRecord,
+    EvaluationDatasetRecord,
+    EvaluationRepository,
+    EvaluationRunRecord,
     GraphCheckpointRecord,
     KnowledgeDocumentRecord,
     McpConnectionRecord,
@@ -141,9 +149,11 @@ from .schemas import (
     CreateAiopsDiagnosticRequest,
     CreateChatPromptRequest,
     CreateChatSessionRequest,
+    CreateEvaluationDatasetRequest,
     LoginRequest,
     McpConnectionMutationRequest,
     RegisterRequest,
+    RunEvaluationRequest,
     StreamChatMessageRequest,
     UpdateChatAssemblyConfigurationRequest,
     UpdateChatMemoryRequest,
@@ -1038,6 +1048,122 @@ def create_app(
             },
         )
 
+    @app.get("/evaluations/datasets")
+    async def list_evaluation_datasets(
+        request: Request,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        repository = _evaluation_repository(request)
+        datasets = await repository.list_datasets(owner_user_id=user.id)
+        items: list[dict[str, object]] = []
+        for dataset in datasets:
+            cases = await repository.list_cases(
+                owner_user_id=user.id, dataset_id=dataset.id
+            )
+            items.append(_evaluation_dataset_payload(dataset, cases, include_cases=False))
+        return success_response(request, {"items": items})
+
+    @app.post("/evaluations/datasets")
+    async def create_evaluation_dataset(
+        request: Request,
+        payload: CreateEvaluationDatasetRequest,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        service = EvaluationHarnessService(_memory_repositories(request))
+        try:
+            dataset = await service.create_dataset(
+                owner_user_id=user.id,
+                name=payload.name,
+                version=payload.version,
+                description=payload.description,
+                gate=EvaluationGate.model_validate(payload.gate.model_dump()),
+                cases=[
+                    EvaluationCaseDefinition(
+                        name=case.name,
+                        execution_type=case.execution_type,
+                        input_summary=case.input_summary,
+                        rules=case.rules,
+                    )
+                    for case in payload.cases
+                ],
+            )
+        except EvaluationDatasetVersionConflict as exc:
+            raise ApiErrorException("BUSINESS_CONFLICT", str(exc)) from exc
+        cases = await _evaluation_repository(request).list_cases(
+            owner_user_id=user.id, dataset_id=dataset.id
+        )
+        return success_response(
+            request, _evaluation_dataset_payload(dataset, cases, include_cases=True)
+        )
+
+    @app.get("/evaluations/datasets/{dataset_id}")
+    async def get_evaluation_dataset(
+        request: Request,
+        dataset_id: str,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        repository = _evaluation_repository(request)
+        dataset = await repository.get_dataset(
+            owner_user_id=user.id, dataset_id=dataset_id
+        )
+        if dataset is None:
+            raise ApiErrorException("BUSINESS_NOT_FOUND")
+        cases = await repository.list_cases(owner_user_id=user.id, dataset_id=dataset.id)
+        return success_response(
+            request, _evaluation_dataset_payload(dataset, cases, include_cases=True)
+        )
+
+    @app.post("/evaluations/datasets/{dataset_id}/runs")
+    async def run_evaluation_dataset(
+        request: Request,
+        dataset_id: str,
+        payload: RunEvaluationRequest,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        service = EvaluationHarnessService(_memory_repositories(request))
+        try:
+            run = await service.run(
+                owner_user_id=user.id,
+                dataset_id=dataset_id,
+                candidate_label=payload.candidate_label,
+                baseline_run_id=payload.baseline_run_id,
+                trace_bindings=payload.trace_bindings,
+            )
+        except EvaluationNotFoundError as exc:
+            raise ApiErrorException("BUSINESS_NOT_FOUND", str(exc)) from exc
+        except EvaluationBindingError as exc:
+            raise ApiErrorException("VALIDATION_INVALID_ARGUMENT", str(exc)) from exc
+        results = await _evaluation_repository(request).list_results(
+            owner_user_id=user.id, run_id=run.id
+        )
+        return success_response(request, _evaluation_run_detail_payload(run, results))
+
+    @app.get("/evaluations/runs")
+    async def list_evaluation_runs(
+        request: Request,
+        user: Annotated[UserRecord, Depends(_current_user)],
+        dataset_id: Annotated[str | None, Query(alias="datasetId")] = None,
+    ) -> object:
+        runs = await _evaluation_repository(request).list_runs(
+            owner_user_id=user.id, dataset_id=dataset_id
+        )
+        return success_response(
+            request, {"items": [_evaluation_run_payload(run) for run in runs]}
+        )
+
+    @app.get("/evaluations/runs/{run_id}")
+    async def get_evaluation_run(
+        request: Request,
+        run_id: str,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> object:
+        repository = _evaluation_repository(request)
+        run = await repository.get_run(owner_user_id=user.id, run_id=run_id)
+        if run is None:
+            raise ApiErrorException("BUSINESS_NOT_FOUND")
+        results = await repository.list_results(owner_user_id=user.id, run_id=run.id)
+        return success_response(request, _evaluation_run_detail_payload(run, results))
+
     @app.get("/chat/sessions")
     async def list_chat_sessions(
         request: Request,
@@ -1581,6 +1707,13 @@ def _auth_service(request: Request) -> AuthService:
 
 def _memory_repositories(request: Request) -> MemoryRepositories:
     return request.app.state.memory_repositories
+
+
+def _evaluation_repository(request: Request) -> EvaluationRepository:
+    repository = _memory_repositories(request).evaluations
+    if repository is None:
+        raise ApiErrorException("SYSTEM_UNAVAILABLE")
+    return repository
 
 
 def _background_job_repository(request: Request) -> BackgroundJobRepository:
@@ -2202,6 +2335,86 @@ def _agent_trace_span_payload(record: AgentTraceSpanRecord) -> dict[str, object]
             record.completed_at.isoformat() if record.completed_at is not None else None
         ),
         "durationMs": record.duration_ms,
+    }
+
+
+def _evaluation_dataset_payload(
+    record: EvaluationDatasetRecord,
+    cases: Sequence[EvaluationCaseRecord],
+    *,
+    include_cases: bool,
+) -> dict[str, object]:
+    gate = record.gate
+    payload: dict[str, object] = {
+        "id": record.id,
+        "name": record.name,
+        "version": record.version,
+        "description": record.description,
+        "gate": {
+            "minPassRate": gate.get("min_pass_rate", 1.0),
+            "minAverageScore": gate.get("min_average_score", 1.0),
+            "maxDurationRegressionPercent": gate.get("max_duration_regression_percent"),
+        },
+        "caseCount": len(cases),
+        "createdAt": record.created_at.isoformat(),
+    }
+    if include_cases:
+        payload["cases"] = [_evaluation_case_payload(case) for case in cases]
+    return payload
+
+
+def _evaluation_case_payload(record: EvaluationCaseRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "sequence": record.sequence,
+        "name": record.name,
+        "executionType": record.execution_type,
+        "inputSummary": record.input_summary,
+        "rules": record.rules,
+    }
+
+
+def _evaluation_run_payload(record: EvaluationRunRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "datasetId": record.dataset_id,
+        "candidateLabel": record.candidate_label,
+        "baselineRunId": record.baseline_run_id,
+        "status": record.status,
+        "gateStatus": record.gate_status,
+        "passRate": record.pass_rate,
+        "averageScore": record.average_score,
+        "averageDurationMs": record.average_duration_ms,
+        "totalToolCalls": record.total_tool_calls,
+        "baselineDelta": record.baseline_delta,
+        "gateFailures": record.gate_failures,
+        "createdAt": record.created_at.isoformat(),
+        "completedAt": (
+            record.completed_at.isoformat() if record.completed_at is not None else None
+        ),
+    }
+
+
+def _evaluation_result_payload(record: EvaluationCaseResultRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "caseId": record.case_id,
+        "sequence": record.sequence,
+        "traceId": record.trace_id,
+        "status": record.status,
+        "score": record.score,
+        "outputSummary": record.output_summary,
+        "metrics": record.metrics,
+        "checks": record.checks,
+    }
+
+
+def _evaluation_run_detail_payload(
+    run: EvaluationRunRecord, results: Sequence[EvaluationCaseResultRecord]
+) -> dict[str, object]:
+    return {
+        "run": _evaluation_run_payload(run),
+        "results": [_evaluation_result_payload(result) for result in results],
     }
 
 

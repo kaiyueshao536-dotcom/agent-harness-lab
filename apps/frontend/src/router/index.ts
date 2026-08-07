@@ -9,6 +9,7 @@ import WorkspaceLayout from "../layouts/WorkspaceLayout.vue";
 import AuthView from "../views/AuthView.vue";
 import AiopsView from "../views/AiopsView.vue";
 import ChatView from "../views/ChatView.vue";
+import EvaluationView from "../views/EvaluationView.vue";
 import KnowledgeView from "../views/KnowledgeView.vue";
 import McpView from "../views/McpView.vue";
 import TraceView from "../views/TraceView.vue";
@@ -72,6 +73,12 @@ export function createAppRouter(auth: AuthRouteAccess): Router {
             name: "traces",
             component: TraceView,
             meta: { title: "执行追踪" }
+          },
+          {
+            path: "evaluations",
+            name: "evaluations",
+            component: EvaluationView,
+            meta: { title: "自动评测" }
           }
         ]
       },

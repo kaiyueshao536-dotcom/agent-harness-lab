@@ -43,6 +43,19 @@ describe("application shell router", () => {
     expect(router.currentRoute.value.meta.title).toBe("执行追踪");
   });
 
+  it("exposes the protected automatic evaluation workspace", async () => {
+    const router = createAppRouter({
+      initialize: vi.fn().mockResolvedValue(undefined),
+      isAuthenticated: () => true
+    });
+
+    await router.push("/evaluations");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("evaluations");
+    expect(router.currentRoute.value.meta.title).toBe("自动评测");
+  });
+
   it("holds dismissible normalized feedback in application state", () => {
     setActivePinia(createPinia());
     const feedback = useFeedbackStore();

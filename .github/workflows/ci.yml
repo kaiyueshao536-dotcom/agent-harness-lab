@@ -73,6 +73,10 @@ jobs:
         working-directory: apps/backend
         run: uv run pyright
 
+      - name: Run secretless evaluation gate
+        working-directory: apps/backend
+        run: uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
+
       - name: Test backend
         working-directory: apps/backend
         run: uv run pytest

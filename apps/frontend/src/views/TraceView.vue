@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted } from "vue";
+import { routeLocationKey } from "vue-router";
 import { RefreshCw, Timer, Workflow, Wrench } from "lucide-vue-next";
 
 import type { AgentTraceExecutionType, AgentTraceStatus } from "@agent-py/api-contracts";
@@ -11,6 +12,7 @@ import AppLoadingState from "../components/AppLoadingState.vue";
 import { useTraceStore } from "../stores/traces";
 
 const traces = useTraceStore();
+const route = inject(routeLocationKey, null);
 const spanCount = computed(() => traces.detail?.spans.length ?? 0);
 const toolCount = computed(
   () => traces.detail?.spans.filter((span) => span.kind === "tool").length ?? 0
@@ -20,7 +22,12 @@ const failedSpanCount = computed(
 );
 
 onMounted(() => {
-  void traces.initialize().catch(() => undefined);
+  void traces.initialize().then(async () => {
+    const traceId = route?.query.traceId;
+    if (typeof traceId === "string" && traceId !== traces.selectedTraceId) {
+      await traces.selectTrace(traceId);
+    }
+  }).catch(() => undefined);
 });
 
 onBeforeUnmount(() => {

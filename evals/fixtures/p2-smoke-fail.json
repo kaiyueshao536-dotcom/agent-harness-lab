@@ -1,0 +1,26 @@
+{
+  "name": "P2 failing gate example",
+  "gate": {
+    "min_pass_rate": 1.0,
+    "min_average_score": 1.0,
+    "max_duration_regression_percent": null
+  },
+  "cases": [
+    {
+      "name": "Missing required evidence",
+      "rules": [
+        { "kind": "trace_succeeded", "values": [], "threshold": null, "description": "" },
+        { "kind": "min_references", "values": [], "threshold": 1, "description": "" }
+      ],
+      "observation": {
+        "trace_id": "fixture_trace_chat_fail",
+        "execution_type": "chat",
+        "output_text": "No evidence was returned.",
+        "tool_names": [],
+        "reference_count": 0,
+        "duration_ms": 800,
+        "trace_status": "succeeded"
+      }
+    }
+  ]
+}

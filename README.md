@@ -24,6 +24,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **上下文与记忆**：按会话选择轮次、窗口占用率或手动压缩策略；压缩保留摘要和完整历史。
 - **RAG**：Markdown/PDF 切分，Milvus 向量检索与 BM25L 并行召回，RRF 融合、Qwen rerank 和可解释排名。
 - **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
+- **自动评测 Harness**：不可变版本数据集把真实 Trace 绑定到确定性质量规则，生成逐案例检查、聚合指标、质量门禁和同数据集基线差异；离线 CLI 与 CI 无需模型或云服务密钥。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -45,6 +46,8 @@ flowchart LR
     JOBS --> DB
     GRAPH --> DB
     TRACE --> DB
+    TRACE --> EVAL["Evaluation Harness"]
+    EVAL --> DB
 ```
 
 核心边界和数据流见 [英文架构概览](docs/architecture.en.md)。
@@ -60,6 +63,7 @@ Alertmanager 活跃告警
   → 生成可追溯报告
   → 保存为用户知识库案例
   → 在“执行追踪”中按 traceId 查看 Planner / Executor / Tool / Report Span
+  → 在“自动评测”中创建数据集版本、绑定 Trace、运行门禁并对比基线
 ```
 
 演示数据的上传和触发都是显式操作。完整步骤见[真实日志与告警教程](docs/tutorials/real-log-and-alert.md)。
@@ -140,6 +144,7 @@ cd apps/backend
 uv sync --frozen --dev
 uv run ruff check .
 uv run pyright
+uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
 uv run pytest
 ```
 
@@ -150,6 +155,7 @@ uv run pytest
 - 密码使用 Argon2 哈希，不存储明文。
 - 聊天、知识、向量、MCP、AIOps、反馈和审计数据按当前用户与 tenant 作用域访问。
 - Trace 列表与详情同样按当前用户隔离；只保存安全摘要、状态、耗时和结构化标识，不保存完整提示词、思维链、模型密钥或原始工具凭据。
+- 评测数据集、运行和结果按当前用户隔离；结果仅保存最多 500 字符的输出摘要、指标和规则检查，不复制完整提示词、思维链或原始工具输入输出。
 - Milvus 记录 owner/user/tenant 元数据，检索时强制加入权限过滤。
 - 应用只读取本地 JSON 项目配置，不从 `.env` 或机器环境变量加载业务密钥。
 - 请通过 [GitHub Security Advisories](SECURITY.md) 私下报告漏洞，不要在 Issue 中粘贴凭据或日志原文。
@@ -160,7 +166,7 @@ uv run pytest
 
 下一阶段计划（尚未实现）：
 
-- 回归评测集、指标面板与失败样本分析；
+- 可选 LLM-as-a-Judge、在线 live runner 与异步大规模评测；
 - 多 Agent 协作和测试 Agent；
 - PostgreSQL/队列支持的多实例任务执行。
 

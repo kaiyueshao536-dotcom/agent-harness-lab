@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -538,6 +539,138 @@ class AgentTraceSpanModel(Base):
         nullable=False,
         default=utc_now,
     )
+
+
+class EvaluationDatasetModel(Base):
+    """Immutable owner-scoped evaluation dataset version."""
+
+    __tablename__ = "evaluation_datasets"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_user_id",
+            "name",
+            "version",
+            name="uq_evaluation_datasets_owner_name_version",
+        ),
+        Index("ix_evaluation_datasets_owner_created", "owner_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    version: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    gate: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvaluationCaseModel(Base):
+    """One ordered deterministic case in an evaluation dataset."""
+
+    __tablename__ = "evaluation_cases"
+    __table_args__ = (
+        UniqueConstraint("dataset_id", "sequence", name="uq_evaluation_cases_sequence"),
+        Index(
+            "ix_evaluation_cases_owner_dataset_sequence",
+            "owner_user_id",
+            "dataset_id",
+            "sequence",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_datasets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    execution_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    input_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    rules: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvaluationRunModel(Base):
+    """Aggregate result for one candidate evaluated against a dataset."""
+
+    __tablename__ = "evaluation_runs"
+    __table_args__ = (
+        Index("ix_evaluation_runs_owner_created", "owner_user_id", "created_at"),
+        Index(
+            "ix_evaluation_runs_owner_dataset_created",
+            "owner_user_id",
+            "dataset_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_datasets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    candidate_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    baseline_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evaluation_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    gate_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    pass_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    average_score: Mapped[float] = mapped_column(Float, nullable=False)
+    average_duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    baseline_delta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    gate_failures: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EvaluationCaseResultModel(Base):
+    """Persisted explainable score for one dataset case."""
+
+    __tablename__ = "evaluation_case_results"
+    __table_args__ = (
+        UniqueConstraint("run_id", "case_id", name="uq_evaluation_case_results_run_case"),
+        Index(
+            "ix_evaluation_case_results_owner_run_sequence",
+            "owner_user_id",
+            "run_id",
+            "sequence",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    owner_user_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    trace_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_traces.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    output_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class DiagnosticTaskModel(Base):

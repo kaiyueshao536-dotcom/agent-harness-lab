@@ -157,6 +157,96 @@ export const OPENAPI_CONTRACT = {
         }
       }
     },
+    "/evaluations/datasets": {
+      get: {
+        operationId: "listEvaluationDatasets",
+        summary: "List owner-scoped immutable evaluation datasets",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationDatasetListApiResponse"),
+          ...protectedErrorResponses
+        }
+      },
+      post: {
+        operationId: "createEvaluationDataset",
+        summary: "Create one immutable evaluation dataset version",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        requestBody: {
+          required: true,
+          content: jsonContent("#/components/schemas/CreateEvaluationDatasetRequest")
+        },
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationDatasetDetailApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
+    "/evaluations/datasets/{datasetId}": {
+      get: {
+        operationId: "getEvaluationDataset",
+        summary: "Read one owner-scoped evaluation dataset version",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "datasetId", in: "path", required: true, schema: { type: "string" } }
+        ],
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationDatasetDetailApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
+    "/evaluations/datasets/{datasetId}/runs": {
+      post: {
+        operationId: "runEvaluationDataset",
+        summary: "Evaluate owner-scoped P1 traces against a dataset",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "datasetId", in: "path", required: true, schema: { type: "string" } }
+        ],
+        requestBody: {
+          required: true,
+          content: jsonContent("#/components/schemas/RunEvaluationRequest")
+        },
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationRunDetailApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
+    "/evaluations/runs": {
+      get: {
+        operationId: "listEvaluationRuns",
+        summary: "List owner-scoped evaluation runs",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "datasetId", in: "query", schema: { type: "string" } }
+        ],
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationRunListApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
+    "/evaluations/runs/{runId}": {
+      get: {
+        operationId: "getEvaluationRun",
+        summary: "Read one explainable owner-scoped evaluation report",
+        tags: ["evaluations"],
+        security: bearerSecurity,
+        parameters: [
+          { name: "runId", in: "path", required: true, schema: { type: "string" } }
+        ],
+        responses: {
+          "200": okResponse("#/components/schemas/EvaluationRunDetailApiResponse"),
+          ...protectedErrorResponses
+        }
+      }
+    },
     "/config/check": {
       get: {
         operationId: "checkRuntimeConfiguration",
@@ -952,6 +1042,75 @@ export const OPENAPI_CONTRACT = {
       },
       AgentTraceListApiResponse: { type: "object" },
       AgentTraceDetailApiResponse: { type: "object" },
+      EvaluationRule: {
+        type: "object",
+        required: ["kind", "values", "threshold", "description"],
+        properties: {
+          kind: {
+            enum: [
+              "contains_all",
+              "excludes_all",
+              "required_tools",
+              "min_references",
+              "max_duration_ms",
+              "max_tool_calls",
+              "trace_succeeded"
+            ]
+          },
+          values: { type: "array", items: { type: "string" } },
+          threshold: { type: ["integer", "null"], minimum: 0 },
+          description: { type: "string" }
+        }
+      },
+      EvaluationGate: {
+        type: "object",
+        required: ["minPassRate", "minAverageScore", "maxDurationRegressionPercent"],
+        properties: {
+          minPassRate: { type: "number", minimum: 0, maximum: 1 },
+          minAverageScore: { type: "number", minimum: 0, maximum: 1 },
+          maxDurationRegressionPercent: { type: ["number", "null"], minimum: 0 }
+        }
+      },
+      EvaluationCaseInput: {
+        type: "object",
+        required: ["name", "executionType", "inputSummary", "rules"],
+        properties: {
+          name: { type: "string" },
+          executionType: { enum: ["chat", "aiops"] },
+          inputSummary: { type: "string" },
+          rules: { type: "array", items: { $ref: "#/components/schemas/EvaluationRule" } }
+        }
+      },
+      CreateEvaluationDatasetRequest: {
+        type: "object",
+        required: ["name", "version", "description", "gate", "cases"],
+        properties: {
+          name: { type: "string" },
+          version: { type: "string" },
+          description: { type: "string" },
+          gate: { $ref: "#/components/schemas/EvaluationGate" },
+          cases: {
+            type: "array",
+            items: { $ref: "#/components/schemas/EvaluationCaseInput" }
+          }
+        }
+      },
+      RunEvaluationRequest: {
+        type: "object",
+        required: ["candidateLabel", "traceBindings"],
+        properties: {
+          candidateLabel: { type: "string" },
+          baselineRunId: { type: ["string", "null"] },
+          traceBindings: { type: "object", additionalProperties: { type: "string" } }
+        }
+      },
+      EvaluationDataset: { type: "object" },
+      EvaluationRun: { type: "object" },
+      EvaluationCaseResult: { type: "object" },
+      EvaluationDatasetListApiResponse: { type: "object" },
+      EvaluationDatasetDetailApiResponse: { type: "object" },
+      EvaluationRunListApiResponse: { type: "object" },
+      EvaluationRunDetailApiResponse: { type: "object" },
       ApiErrorResponse: {
         type: "object",
         required: ["ok", "error", "meta"],

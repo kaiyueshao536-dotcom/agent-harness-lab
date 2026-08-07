@@ -72,6 +72,12 @@ The authenticated query API exposes `GET /agent-traces` and `GET /agent-traces/{
 
 Trace persistence is intentionally an operational projection rather than a transcript. It stores lifecycle status, timing, safe summaries, resource/request identifiers, and redacted structured attributes. It does not store complete prompts, chain-of-thought, model credentials, or raw tool credentials. Trace write failures are logged and execution continues, preventing observability persistence from becoming a Chat or AIOps availability dependency.
 
+## Trace-backed evaluation harness
+
+The evaluation layer replays owner-scoped P1 traces through a closed set of deterministic rules. Immutable dataset versions define cases and release gates; each run binds every case to one compatible trace, resolves only the final persisted business output plus safe trace metrics, and stores explainable checks and a 500-character output summary. Baselines must belong to the same owner and dataset.
+
+This layer deliberately does not invoke the LLM, MCP, or Tencent CLS. The same traces can therefore be evaluated repeatedly without cloud-query cost or nondeterministic model output. A secretless offline CLI uses the same scoring kernel in CI. LLM-as-a-Judge and a live Agent runner remain future extensions.
+
 ## Trust and authorization boundaries
 
 - Registration, login, and logout are supported; passwords are Argon2 hashes.
