@@ -7,7 +7,7 @@
 
 一个面向真实运维场景的 AI Agent 工程样板：把对话、RAG、MCP 工具调用和 LangGraph 诊断工作流放进可测试、可审计、按用户隔离的全栈系统。
 
-[English architecture overview](docs/architecture.en.md) · [安装指南](docs/setup/windows.md) · [真实日志与告警演示](docs/tutorials/real-log-and-alert.md) · [贡献指南](CONTRIBUTING.md)
+[English architecture overview](docs/architecture.en.md) · [版本更新与复盘](CHANGELOG.md) · [安装指南](docs/setup/windows.md) · [真实日志与告警演示](docs/tutorials/real-log-and-alert.md) · [贡献指南](CONTRIBUTING.md)
 
 ## 为什么做这个项目
 

@@ -101,4 +101,4 @@ This layer deliberately does not invoke the LLM, MCP, or Tencent CLS. The same t
 
 ## Verification
 
-The repository's GitHub Actions workflow runs OpenSpec validation, shared-contract type checking, frontend type checking/tests/build, and backend Ruff/Pyright/pytest. See the root [README](../README.md#验证) for exact commands.
+The repository's GitHub Actions workflow runs OpenSpec validation, shared-contract type checking, frontend type checking/tests/build, and backend Ruff/Pyright/pytest. See the root [README](https://github.com/kaiyueshao536-dotcom/agent-harness-lab#验证) for exact commands.

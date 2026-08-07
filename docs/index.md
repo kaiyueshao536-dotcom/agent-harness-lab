@@ -13,6 +13,9 @@ hero:
     - theme: alt
       text: 项目基础
       link: /foundation
+    - theme: alt
+      text: 版本复盘
+      link: /version-history/
 
 features:
   - title: OpenSpec 变更
@@ -21,4 +24,6 @@ features:
     details: 提供 macOS、Linux 和 Windows 的依赖安装与本地启动说明。
   - title: AIOps 实践
     details: 查看真实日志、告警、知识检索与诊断案例的使用文档。
+  - title: 版本复盘
+    details: 按 P 版本查看目标、实现、验证结果、设计取舍、已知限制和回退方式。
 ---
