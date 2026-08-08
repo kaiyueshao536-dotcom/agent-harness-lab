@@ -87,6 +87,53 @@ describe("AIOps components", () => {
     expect(execution.text()).not.toContain("Persisted report body");
   });
 
+  it("shows P4 context candidates, exclusions, and token budget", () => {
+    const chain: AiopsDiagnosticEvidenceChain = {
+      task: diagnostic(),
+      steps: [{
+        id: "step_p4",
+        taskId: "diagnostic_1",
+        sequence: 1,
+        phase: "planner",
+        status: "completed",
+        payload: {
+          noSopMatched: false,
+          retrievalContext: {
+            policy: "sop-budget-v1",
+            query: "PaymentGatewayTimeoutHigh",
+            filters: { metadata: { knowledgeType: "sop" } },
+            allowedKnowledgeTypes: ["sop"],
+            excludedKnowledgeTypes: ["diagnostic-case", "document"],
+            candidates: [
+              { documentId: "doc_payment", source: "payment-timeout-sop.md", knowledgeType: "sop", score: 0.9215, affinity: "alert-match", decision: "selected", reason: "告警匹配", estimatedTokens: 240, usedTokens: 240, truncated: false },
+              { documentId: "doc_search", source: "search-es-timeout-sop.md", knowledgeType: "sop", score: 0.654, affinity: "metadata-conflict", decision: "excluded", reason: "服务 metadata 冲突", estimatedTokens: 180, usedTokens: 0, truncated: false }
+            ],
+            selected: [
+              { documentId: "doc_payment", source: "payment-timeout-sop.md", knowledgeType: "sop", score: 0.9215, affinity: "alert-match", decision: "selected", reason: "告警匹配", estimatedTokens: 240, usedTokens: 240, truncated: false }
+            ],
+            budget: { tokenLimit: 1600, usedTokens: 240, sourceLimit: 3, truncated: false },
+            fallbackReason: null
+          },
+          plan: []
+        },
+        createdAt: "2026-08-09T00:00:00.000Z"
+      }],
+      toolCalls: [],
+      executions: [],
+      evidence: [],
+      reports: [],
+      reportEvidenceLinks: [],
+      checkpoints: []
+    };
+
+    const wrapper = mount(AiopsEvidenceChain, { props: { chain } });
+    expect(wrapper.text()).toContain("检索策略：SOP-budget-v1");
+    expect(wrapper.text()).toContain("候选来源：2 个；实际进入：1 个");
+    expect(wrapper.text()).toContain("上下文预算：240/1600 近似 Token");
+    expect(wrapper.text()).toContain("选中 · payment-timeout-sop.md · alert-match");
+    expect(wrapper.text()).toContain("排除 · search-es-timeout-sop.md · metadata-conflict");
+  });
+
   it("explains an SOP retrieval fallback without breaking older step payloads", () => {
     const chain: AiopsDiagnosticEvidenceChain = {
       task: diagnostic(),

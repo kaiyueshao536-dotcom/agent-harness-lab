@@ -30,7 +30,14 @@ def test_scoring_is_deterministic_explainable_and_limits_output_summary() -> Non
         EvaluationRule(kind="contains_all", values=["root cause"]),
         EvaluationRule(kind="excludes_all", values=["password"]),
         EvaluationRule(kind="required_tools", values=["SearchLog"]),
+        EvaluationRule(
+            kind="required_context_sources", values=["payment-timeout-sop.md"]
+        ),
+        EvaluationRule(
+            kind="excluded_context_sources", values=["search-es-timeout-sop.md"]
+        ),
         EvaluationRule(kind="min_references", threshold=1),
+        EvaluationRule(kind="max_context_tokens", threshold=1600),
         EvaluationRule(kind="max_duration_ms", threshold=2000),
         EvaluationRule(kind="max_tool_calls", threshold=2),
     ]
@@ -47,6 +54,8 @@ def test_scoring_is_deterministic_explainable_and_limits_output_summary() -> Non
         ),
         tool_names=["SearchLog"],
         reference_count=2,
+        context_source_names=["payment-timeout-sop.md"],
+        context_tokens=420,
         duration_ms=1200,
         trace_status="succeeded",
     )
@@ -62,6 +71,8 @@ def test_scoring_is_deterministic_explainable_and_limits_output_summary() -> Non
     assert "sk-" + "secretvalue" not in first.output_summary
     assert "[redacted]" in first.output_summary
     assert all(check.passed for check in first.checks)
+    assert first.metrics["contextTokens"] == 420
+    assert first.metrics["contextSourceCount"] == 1
     assert "safe safe safe" not in str(first.checks)
 
 
@@ -96,6 +107,23 @@ def test_evidence_cautious_rule_rejects_zero_result_overclaim() -> None:
     assert "采集链路存在异常" in failed.checks[0].actual
 
 
+def test_context_budget_rule_does_not_treat_legacy_trace_as_zero_tokens() -> None:
+    observation = EvaluationObservation(
+        trace_id="legacy-trace",
+        execution_type="aiops",
+        output_text="legacy report",
+        trace_status="succeeded",
+    )
+
+    result = score_case(
+        [EvaluationRule(kind="max_context_tokens", threshold=1600)],
+        observation,
+    )
+
+    assert result.passed is False
+    assert result.checks[0].actual == "None"
+
+
 def test_offline_cli_uses_gate_exit_codes(tmp_path: Path) -> None:
     repository_root = Path(__file__).resolve().parents[3]
     pass_fixture = repository_root / "evals" / "fixtures" / "p2-smoke-pass.json"
@@ -113,6 +141,19 @@ def test_offline_cli_uses_gate_exit_codes(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert run_cli([str(invalid_fixture), "--output", str(report)]) == 2
+
+
+def test_p4_context_fixture_is_secretless_deterministic_and_passes(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    fixture = repository_root / "evals" / "fixtures" / "p4-context-quality-pass.json"
+    report = tmp_path / "p4-context-report.json"
+
+    assert run_cli([str(fixture), "--output", str(report)]) == 0
+    payload = report.read_text(encoding="utf-8")
+    assert '"gateStatus": "passed"' in payload
+    assert '"contextTokens": 480' in payload
+    assert "AKID" not in payload
+    assert "sk-" not in payload
 
 
 def test_p3_recovery_fixture_is_secretless_deterministic_and_passes(tmp_path: Path) -> None:
@@ -275,6 +316,26 @@ async def test_aiops_trace_resolves_report_evidence_and_tool_spans(
             status="succeeded",
             query="diagnose latency",
         )
+        await repositories.diagnostics.create_step(
+            owner_user_id="aiops-owner",
+            step_id="aiops-planner",
+            task_id="aiops-task",
+            sequence=1,
+            phase="planner",
+            status="completed",
+            payload={
+                "retrievalContext": {
+                    "policy": "sop-budget-v1",
+                    "selected": [
+                        {
+                            "source": "payment-timeout-sop.md",
+                            "decision": "selected",
+                        }
+                    ],
+                    "budget": {"usedTokens": 420, "tokenLimit": 1600},
+                }
+            },
+        )
         await repositories.diagnostics.add_report(
             owner_user_id="aiops-owner",
             report_id="aiops-report",
@@ -338,6 +399,15 @@ async def test_aiops_trace_resolves_report_evidence_and_tool_spans(
                     rules=[
                         EvaluationRule(kind="contains_all", values=["root cause"]),
                         EvaluationRule(kind="required_tools", values=["SearchLog"]),
+                        EvaluationRule(
+                            kind="required_context_sources",
+                            values=["payment-timeout-sop.md"],
+                        ),
+                        EvaluationRule(
+                            kind="excluded_context_sources",
+                            values=["search-es-timeout-sop.md"],
+                        ),
+                        EvaluationRule(kind="max_context_tokens", threshold=1600),
                         EvaluationRule(kind="min_references", threshold=1),
                         EvaluationRule(kind="evidence_cautious"),
                         EvaluationRule(kind="trace_succeeded"),

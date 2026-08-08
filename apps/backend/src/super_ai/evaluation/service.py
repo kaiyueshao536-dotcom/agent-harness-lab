@@ -217,6 +217,8 @@ class EvaluationHarnessService:
             )
         spans = await self._traces.list_spans(owner_user_id=owner_user_id, trace_id=trace_id)
         tool_names = [span.name for span in spans if span.kind == "tool"]
+        context_source_names: list[str] = []
+        context_tokens: int | None = None
         if trace.execution_type == "chat":
             output_text, reference_count = await self._resolve_chat_output(
                 owner_user_id=owner_user_id,
@@ -228,12 +230,18 @@ class EvaluationHarnessService:
                 owner_user_id=owner_user_id,
                 task_id=trace.resource_id,
             )
+            context_source_names, context_tokens = await self._resolve_aiops_context(
+                owner_user_id=owner_user_id,
+                task_id=trace.resource_id,
+            )
         return EvaluationObservation(
             trace_id=trace.id,
             execution_type=cast(ExecutionType, trace.execution_type),
             output_text=output_text,
             tool_names=tool_names,
             reference_count=reference_count,
+            context_source_names=context_source_names,
+            context_tokens=context_tokens,
             duration_ms=trace.duration_ms,
             trace_status=trace.status,
         )
@@ -268,6 +276,37 @@ class EvaluationHarnessService:
             owner_user_id=owner_user_id, task_id=task_id
         )
         return reports[-1].content, len(evidence)
+
+    async def _resolve_aiops_context(
+        self, *, owner_user_id: str, task_id: str
+    ) -> tuple[list[str], int | None]:
+        """Read safe P4 context facts from the latest persisted Planner snapshot."""
+        steps = await self._repositories.diagnostics.list_steps(
+            owner_user_id=owner_user_id,
+            task_id=task_id,
+        )
+        for step in reversed(steps):
+            if step.phase != "planner":
+                continue
+            raw_snapshot = step.payload.get("retrievalContext")
+            if not isinstance(raw_snapshot, Mapping):
+                continue
+            snapshot = cast(Mapping[str, object], raw_snapshot)
+            raw_selected = snapshot.get("selected")
+            source_names: list[str] = []
+            if isinstance(raw_selected, list):
+                for raw_source in cast(list[object], raw_selected):
+                    if not isinstance(raw_source, Mapping):
+                        continue
+                    source = cast(Mapping[str, object], raw_source).get("source")
+                    if isinstance(source, str) and source.strip():
+                        source_names.append(source.strip())
+            raw_budget = snapshot.get("budget")
+            if not isinstance(raw_budget, Mapping):
+                return source_names, None
+            used_tokens = cast(Mapping[str, object], raw_budget).get("usedTokens")
+            return source_names, used_tokens if isinstance(used_tokens, int) else None
+        return [], None
 
 
 def _average(values: Sequence[float]) -> float:

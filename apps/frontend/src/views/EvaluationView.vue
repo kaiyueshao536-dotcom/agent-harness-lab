@@ -39,12 +39,15 @@ const baselineRunId = ref("");
 const valueRuleKinds = new Set<EvaluationRuleKind>([
   "contains_all",
   "excludes_all",
-  "required_tools"
+  "required_tools",
+  "required_context_sources",
+  "excluded_context_sources"
 ]);
 const thresholdRuleKinds = new Set<EvaluationRuleKind>([
   "min_references",
   "max_duration_ms",
-  "max_tool_calls"
+  "max_tool_calls",
+  "max_context_tokens"
 ]);
 const canRun = computed(() => {
   const cases = evaluations.selectedDataset?.cases ?? [];
@@ -209,7 +212,7 @@ function caseNameFor(caseId: string): string {
             <label>案例名<input v-model="caseName" placeholder="知识库回答包含出处" /></label>
             <label>执行类型<select v-model="caseExecutionType"><option value="chat">Chat</option><option value="aiops">AIOps</option></select></label>
             <label class="wide">输入摘要<input v-model="caseInputSummary" placeholder="只记录任务摘要，不复制完整提示词" /></label>
-            <label>规则<select v-model="ruleKind"><option value="trace_succeeded">Trace 成功</option><option value="evidence_cautious">证据不足时保持谨慎</option><option value="contains_all">包含全部文本</option><option value="excludes_all">排除全部文本</option><option value="required_tools">必须调用工具</option><option value="min_references">最少引用数</option><option value="max_duration_ms">最大耗时 ms</option><option value="max_tool_calls">最大工具数</option></select></label>
+            <label>规则<select v-model="ruleKind"><option value="trace_succeeded">Trace 成功</option><option value="evidence_cautious">证据不足时保持谨慎</option><option value="contains_all">包含全部文本</option><option value="excludes_all">排除全部文本</option><option value="required_tools">必须调用工具</option><option value="required_context_sources">必须进入上下文的来源</option><option value="excluded_context_sources">禁止进入上下文的来源</option><option value="min_references">最少引用数</option><option value="max_duration_ms">最大耗时 ms</option><option value="max_tool_calls">最大工具数</option><option value="max_context_tokens">最大上下文 Token</option></select></label>
             <label v-if="valueRuleKinds.has(ruleKind)">期望值（逗号分隔）<input v-model="ruleValue" /></label>
             <label v-if="thresholdRuleKinds.has(ruleKind)">阈值<input v-model.number="ruleThreshold" type="number" min="0" /></label>
           </div>

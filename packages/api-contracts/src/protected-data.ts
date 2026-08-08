@@ -64,15 +64,30 @@ export interface AiopsRetrievalContextSource {
   readonly source: string;
   readonly knowledgeType: "document" | "sop" | "diagnostic-case";
   readonly score: number;
+  readonly affinity?: "alert-match" | "service-match" | "generic" | "metadata-conflict";
+  readonly decision?: "selected" | "excluded";
+  readonly reason?: string;
+  readonly estimatedTokens?: number;
+  readonly usedTokens?: number;
+  readonly truncated?: boolean;
+}
+
+export interface AiopsRetrievalContextBudget {
+  readonly tokenLimit: number;
+  readonly usedTokens: number;
+  readonly sourceLimit: number;
+  readonly truncated: boolean;
 }
 
 export interface AiopsRetrievalContextSnapshot {
-  readonly policy: "sop-only";
+  readonly policy: "sop-only" | "sop-budget-v1";
   readonly query: string;
   readonly filters: Readonly<Record<string, unknown>>;
   readonly allowedKnowledgeTypes: readonly string[];
   readonly excludedKnowledgeTypes: readonly string[];
+  readonly candidates?: readonly AiopsRetrievalContextSource[];
   readonly selected: readonly AiopsRetrievalContextSource[];
+  readonly budget?: AiopsRetrievalContextBudget;
   readonly fallbackReason: string | null;
 }
 

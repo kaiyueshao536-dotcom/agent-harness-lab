@@ -64,7 +64,7 @@ uv run python scripts/seed_java_ecommerce_aiops_sops.py --profile java-ecommerce
 3. 选择任一 `java-ecommerce` 告警并开始诊断。
 4. 等待 Planner、Executor、Replanner、Report 的 SSE 事件结束。
 
-在执行链的 Planner 中确认检索策略显示为 `SOP-only`，命中来源的知识角色均为 `sop`；`diagnostic-case` 和普通 `document` 不应进入默认规划上下文。
+在执行链的 Planner 中确认检索策略显示为 `SOP-budget-v1`：所有候选角色均为 `sop`，当前告警对应 SOP 应标记为 `alert-match` 并进入上下文，其他服务 SOP 应标记为 `metadata-conflict` 并排除；页面同时显示实际来源数与 1600 近似 Token 预算。`diagnostic-case` 和普通 `document` 不应进入默认规划上下文。
 
 成功证据链必须包括选中告警、同 incident 的 SOP 知识引用，以及通过真实 CLS MCP `SearchLog` 查询到的相同 trace ID 日志。某个工具失败时报告必须如实说明，不得使用其他场景证据填充。
 

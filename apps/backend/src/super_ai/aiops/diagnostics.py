@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 from uuid import uuid4
 
 from super_ai.aiops.cases import DiagnosisCasePersistor
+from super_ai.aiops.context_quality import SopContextSelection, select_sop_context
 from super_ai.aiops.graph import DiagnosticNodes, build_diagnostic_graph
 from super_ai.aiops.state import AiopsDiagnosticState
 from super_ai.error_catalog import ERROR_DEFINITIONS
@@ -323,7 +324,7 @@ class AiopsDiagnosticService:
             retrieval_result = await self._retrieval_tool.run(
                 KnowledgeRetrievalToolInput(
                     query=retrieval_query,
-                    top_k=3,
+                    top_k=5,
                     filters=retrieval_filters,
                 ),
                 owner_user_id=owner_user_id,
@@ -335,11 +336,20 @@ class AiopsDiagnosticService:
             retrieval_error = exc.message
 
         sop_hits: list[JsonDict] = []
+        context_selection = select_sop_context((), alert=alert)
         if retrieval_result is not None:
-            sop_hits = [_sop_hit_payload(hit) for hit in retrieval_result.results]
+            context_selection = select_sop_context(
+                retrieval_result.results,
+                alert=alert,
+            )
+            sop_hits = [
+                _sop_hit_payload(hit) for hit in context_selection.selected_hits
+            ]
             retrieval_payload = {
                 "query": retrieval_result.query,
-                "results": sop_hits,
+                "results": [
+                    _sop_hit_payload(hit) for hit in retrieval_result.results
+                ],
                 "citations": [
                     _citation_payload(citation) for citation in retrieval_result.citations
                 ],
@@ -382,7 +392,7 @@ class AiopsDiagnosticService:
         no_sop_matched = not sop_hits
         retrieval_context = _retrieval_context_snapshot(
             query=retrieval_query,
-            hits=retrieval_result.results if retrieval_result is not None else (),
+            selection=context_selection,
             retrieval_error=retrieval_error,
         )
         if no_sop_matched:
@@ -1125,33 +1135,49 @@ def _sop_retrieval_query(query: str, alert: JsonDict) -> str:
 def _retrieval_context_snapshot(
     *,
     query: str,
-    hits: Sequence[KnowledgeRetrievalHit],
+    selection: SopContextSelection,
     retrieval_error: str | None,
 ) -> JsonDict:
     """Persist safe retrieval provenance without prompt or chunk content."""
     selected: list[JsonDict] = []
-    for hit in hits:
+    candidates: list[JsonDict] = []
+    for candidate in selection.candidates:
+        hit = candidate.hit
         metadata = _json_dict(hit.metadata)
-        selected.append(
-            {
-                "documentId": hit.document_id,
-                "source": hit.source,
-                "knowledgeType": str(metadata.get("knowledgeType") or "sop"),
-                "score": hit.score,
-            }
-        )
+        payload: JsonDict = {
+            "documentId": hit.document_id,
+            "source": hit.source,
+            "knowledgeType": str(metadata.get("knowledgeType") or "sop"),
+            "score": hit.score,
+            "affinity": candidate.affinity,
+            "decision": candidate.decision,
+            "reason": candidate.reason,
+            "estimatedTokens": candidate.estimated_tokens,
+            "usedTokens": candidate.used_tokens,
+            "truncated": candidate.truncated,
+        }
+        candidates.append(payload)
+        if candidate.decision == "selected":
+            selected.append(payload.copy())
     fallback_reason: str | None = None
     if retrieval_error is not None:
         fallback_reason = "正式 SOP 检索不可用，已退化为通用证据收集计划。"
     elif not selected:
         fallback_reason = "未命中正式 SOP，已退化为通用证据收集计划。"
     return {
-        "policy": "sop-only",
+        "policy": "sop-budget-v1",
         "query": query,
         "filters": {"metadata": {"knowledgeType": "sop"}},
         "allowedKnowledgeTypes": ["sop"],
         "excludedKnowledgeTypes": ["diagnostic-case", "document"],
+        "candidates": candidates,
         "selected": selected,
+        "budget": {
+            "tokenLimit": selection.token_limit,
+            "usedTokens": selection.used_tokens,
+            "sourceLimit": selection.source_limit,
+            "truncated": selection.truncated,
+        },
         "fallbackReason": fallback_reason,
     }
 

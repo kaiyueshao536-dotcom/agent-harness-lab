@@ -28,6 +28,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **工具失败恢复闭环**：MCP 连接重试以 `Tool → Attempt` 父子 Span 留痕；时间线显示父子层级、尝试序号和错误类别；失败诊断即使已有降级报告也可关联原 Job 重试，保留旧 Job/Trace，并用同一评测数据集验证恢复结果。
 - **恢复证据质量**：诊断详情按独立 Trace 分组跨重试累计记录；历史案例不再作为 Report 的当前事实，零日志结果使用确定性谨慎报告；`evidence_cautious` 与排除规则阻止过度推断和已知历史污染词进入发布 Gate。
 - **RAG 证据角色隔离**：AIOps Planner 默认只召回正式 SOP，在 Rerank 前排除历史诊断案例；安全 Context Snapshot 展示过滤策略、命中来源、知识角色、分数和退化原因，不保存提示词或知识正文。
+- **上下文质量闭环**：Planner 按告警/服务元数据选择 SOP，并以 1600 近似 Token 和 3 个来源为上限；`sop-budget-v1` Snapshot 解释候选、选中/排除原因与预算，Evaluation 可对必需来源、禁止来源和上下文 Token 设置确定性 Gate。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -68,6 +69,7 @@ Alertmanager 活跃告警
   → 在“执行追踪”中按 traceId 查看 Planner / Executor / Tool / Report Span
   → 在“自动评测”中创建数据集版本、绑定 Trace、运行门禁并对比基线
   → 外部工具失败时定位具体 Attempt，修复后关联重试并生成新 Trace
+  → 用 Context Snapshot 定位无关 SOP，回填旧索引元数据后以同一 Dataset 对比失败/成功 Trace
 ```
 
 演示数据的上传和触发都是显式操作。完整步骤见[真实日志与告警教程](docs/tutorials/real-log-and-alert.md)。

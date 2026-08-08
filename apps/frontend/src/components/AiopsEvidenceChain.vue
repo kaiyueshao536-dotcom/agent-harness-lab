@@ -112,8 +112,36 @@ function stepOutput(step: AiopsDiagnosticStep): readonly string[] {
 
 function retrievalContextLines(value: unknown): readonly string[] {
   const snapshot = record(value) as Partial<AiopsRetrievalContextSnapshot>;
-  if (snapshot.policy !== "sop-only") return [];
+  if (snapshot.policy !== "sop-only" && snapshot.policy !== "sop-budget-v1") return [];
   const selected = Array.isArray(snapshot.selected) ? snapshot.selected.map(record) : [];
+  if (snapshot.policy === "sop-budget-v1") {
+    const candidates = Array.isArray(snapshot.candidates)
+      ? snapshot.candidates.map(record)
+      : selected;
+    const budget = record(snapshot.budget);
+    const tokenLimit = typeof budget.tokenLimit === "number" ? budget.tokenLimit : 0;
+    const usedTokens = typeof budget.usedTokens === "number" ? budget.usedTokens : 0;
+    const sourceLimit = typeof budget.sourceLimit === "number" ? budget.sourceLimit : 0;
+    const truncated = budget.truncated === true ? " · 含截断来源" : "";
+    const lines = [
+      "检索策略：SOP-budget-v1（正式 SOP + 元数据路由 + Token 预算）",
+      "知识角色：允许 sop；排除 diagnostic-case、document",
+      `候选来源：${candidates.length} 个；实际进入：${selected.length} 个`,
+      `上下文预算：${usedTokens}/${tokenLimit} 近似 Token · 来源 ${selected.length}/${sourceLimit}${truncated}`
+    ];
+    for (const source of candidates.slice(0, 5)) {
+      const name = typeof source.source === "string" ? source.source : "未知来源";
+      const affinity = typeof source.affinity === "string" ? source.affinity : "generic";
+      const decision = source.decision === "excluded" ? "排除" : "选中";
+      const score = typeof source.score === "number" ? source.score.toFixed(4) : "未知";
+      const reason = typeof source.reason === "string" ? ` · ${source.reason}` : "";
+      lines.push(`${decision} · ${name} · ${affinity} · 分数 ${score}${reason}`);
+    }
+    if (typeof snapshot.fallbackReason === "string" && snapshot.fallbackReason) {
+      lines.push(`退化原因：${snapshot.fallbackReason}`);
+    }
+    return lines;
+  }
   const lines = [
     "检索策略：SOP-only（仅正式 SOP）",
     "知识角色：允许 sop；排除 diagnostic-case、document",

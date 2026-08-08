@@ -12,7 +12,10 @@ RuleKind = Literal[
     "contains_all",
     "excludes_all",
     "required_tools",
+    "required_context_sources",
+    "excluded_context_sources",
     "min_references",
+    "max_context_tokens",
     "max_duration_ms",
     "max_tool_calls",
     "evidence_cautious",
@@ -32,8 +35,19 @@ class EvaluationRule(BaseModel):
 
     @model_validator(mode="after")
     def validate_arguments(self) -> Self:
-        value_kinds = {"contains_all", "excludes_all", "required_tools"}
-        threshold_kinds = {"min_references", "max_duration_ms", "max_tool_calls"}
+        value_kinds = {
+            "contains_all",
+            "excludes_all",
+            "required_tools",
+            "required_context_sources",
+            "excluded_context_sources",
+        }
+        threshold_kinds = {
+            "min_references",
+            "max_duration_ms",
+            "max_tool_calls",
+            "max_context_tokens",
+        }
         if self.kind in value_kinds and not self.values:
             raise ValueError(f"{self.kind} requires at least one value")
         if self.kind in threshold_kinds and self.threshold is None:
@@ -76,6 +90,8 @@ class EvaluationObservation(BaseModel):
     output_text: str
     tool_names: list[str] = Field(default_factory=list)
     reference_count: int = Field(default=0, ge=0)
+    context_source_names: list[str] = Field(default_factory=list)
+    context_tokens: int | None = Field(default=None, ge=0)
     duration_ms: int | None = Field(default=None, ge=0)
     trace_status: str
 

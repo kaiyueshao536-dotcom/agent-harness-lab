@@ -1051,9 +1051,13 @@ export const OPENAPI_CONTRACT = {
               "contains_all",
               "excludes_all",
               "required_tools",
+              "required_context_sources",
+              "excluded_context_sources",
               "min_references",
+              "max_context_tokens",
               "max_duration_ms",
               "max_tool_calls",
+              "evidence_cautious",
               "trace_succeeded"
             ]
           },

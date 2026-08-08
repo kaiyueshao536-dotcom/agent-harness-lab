@@ -369,13 +369,19 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
     assert persisted.result_payload["noSopMatched"] is False
     planner_payload = steps[0].payload
     retrieval_context = cast(dict[str, object], planner_payload["retrievalContext"])
-    assert retrieval_context["policy"] == "sop-only"
+    assert retrieval_context["policy"] == "sop-budget-v1"
     assert retrieval_context["allowedKnowledgeTypes"] == ["sop"]
     assert retrieval_context["excludedKnowledgeTypes"] == ["diagnostic-case", "document"]
     selected = cast(list[dict[str, object]], retrieval_context["selected"])
     assert selected[0]["source"] == "worker-cpu-sop.md"
     assert selected[0]["knowledgeType"] == "sop"
+    assert selected[0]["affinity"] == "generic"
+    assert selected[0]["decision"] == "selected"
     assert "content" not in selected[0]
+    budget = cast(dict[str, object], retrieval_context["budget"])
+    assert budget["tokenLimit"] == 1600
+    assert budget["sourceLimit"] == 3
+    assert isinstance(budget["usedTokens"], int)
     assert reports[0].payload["reportGeneration"] == "llm"
     assert reports[0].title == "告警分析报告"
     assert reports[0].content == REPORT_MARKDOWN

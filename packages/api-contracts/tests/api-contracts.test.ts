@@ -788,6 +788,13 @@ describe("OpenAPI contract", () => {
       OPENAPI_CONTRACT.paths["/evaluations/datasets/{datasetId}/runs"]?.post?.operationId
     ).toBe("runEvaluationDataset");
     expect(OPENAPI_CONTRACT.components.schemas.EvaluationRule).toBeDefined();
+    expect(
+      OPENAPI_CONTRACT.components.schemas.EvaluationRule.properties.kind.enum
+    ).toEqual(expect.arrayContaining([
+      "required_context_sources",
+      "excluded_context_sources",
+      "max_context_tokens"
+    ]));
     expect(OPENAPI_CONTRACT.components.schemas.EvaluationGate).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.EvaluationCaseResult).toBeDefined();
     expect(OPENAPI_CONTRACT.components.schemas.EvaluationRunDetailApiResponse).toBeDefined();

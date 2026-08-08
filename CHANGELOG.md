@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P4 | 2026-08-09 | AIOps 上下文路由、Token 预算与质量 Gate | 以不可变 Tag 指向为准 | `p4-aiops-context-quality` | [P4 复盘](docs/version-history/p4-context-quality.md) |
 | P3.3.1 | 2026-08-09 | Evaluation 跨 Dataset 运行草稿隔离 | 以不可变 Tag 指向为准 | `p3.3.1-evaluation-binding-reset` | [P3.3.1 复盘](docs/version-history/p3.3.1-evaluation-binding-reset.md) |
 | P3.3 | 2026-08-09 | AIOps RAG 证据角色隔离 | 以不可变 Tag 指向为准 | [`p3.3-rag-evidence-isolation`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.3-rag-evidence-isolation) | [P3.3 复盘](docs/version-history/p3.3-rag-evidence-isolation.md) |
 | P3.2 | 2026-08-09 | 恢复执行与报告证据边界闭环 | 以不可变 Tag 指向为准 | [`p3.2-recovery-evidence-quality`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.2-recovery-evidence-quality) | [P3.2 复盘](docs/version-history/p3.2-recovery-evidence-quality.md) |
@@ -51,6 +52,14 @@
 - 修复创建新 Dataset 后仍提交旧 Case Trace 绑定和旧 Baseline 的前端状态泄漏。
 - Dataset 创建与切换统一调用运行草稿清理；候选版本标签保留，后端精确绑定校验不放宽。
 - 增加真实复现顺序的组件测试，证明新 Dataset 首次运行只提交新 Case ID。
+
+## P4 AIOps 上下文质量闭环
+
+- 在 SOP-only 结果上按告警与服务元数据确定性路由，冲突 SOP 不再进入 Planner；上下文限制为 3 个来源和 1600 近似 Token。
+- `sop-budget-v1` Context Snapshot 与执行链展示候选、亲和度、选中/排除原因和预算，同时兼容旧 Snapshot。
+- Evaluation 增加必需来源、禁止来源和最大上下文 Token 规则，并提供无密钥 P4 离线 fixture。
+- 真实验收首次发现旧 Milvus 索引缺少路由元数据；重新 seed/reindex 后，上下文从 3 个来源/872 Token 降至 1 个来源/284 Token。
+- 同一不可变 Dataset 中，修复前 Trace Gate 失败（80%），修复后 Trace Gate 通过（100%）；平均分相对 Baseline 提升 20 个百分点。
 
 ## 维护规则
 

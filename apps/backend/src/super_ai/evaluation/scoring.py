@@ -51,6 +51,8 @@ def score_case(
             "durationMs": observation.duration_ms,
             "toolCallCount": len(observation.tool_names),
             "referenceCount": observation.reference_count,
+            "contextSourceCount": len(observation.context_source_names),
+            "contextTokens": observation.context_tokens,
             "traceStatus": observation.trace_status,
         },
         checks=checks,
@@ -86,6 +88,7 @@ def evaluate_gate(
 def _evaluate_rule(rule: EvaluationRule, observation: EvaluationObservation) -> RuleCheck:
     output = observation.output_text.casefold()
     tools = {name.casefold() for name in observation.tool_names}
+    context_sources = {name.casefold() for name in observation.context_source_names}
     values = [value.casefold() for value in rule.values]
     if rule.kind == "contains_all":
         missing = [
@@ -100,6 +103,20 @@ def _evaluate_rule(rule: EvaluationRule, observation: EvaluationObservation) -> 
             raw for raw, value in zip(rule.values, values, strict=True) if value not in tools
         ]
         return _check(rule, not missing, ", ".join(rule.values), f"missing={missing}")
+    if rule.kind == "required_context_sources":
+        missing = [
+            raw
+            for raw, value in zip(rule.values, values, strict=True)
+            if value not in context_sources
+        ]
+        return _check(rule, not missing, ", ".join(rule.values), f"missing={missing}")
+    if rule.kind == "excluded_context_sources":
+        found = [
+            raw
+            for raw, value in zip(rule.values, values, strict=True)
+            if value in context_sources
+        ]
+        return _check(rule, not found, ", ".join(rule.values), f"found={found}")
     if rule.kind == "min_references":
         threshold = _threshold(rule)
         return _check(
@@ -121,6 +138,15 @@ def _evaluate_rule(rule: EvaluationRule, observation: EvaluationObservation) -> 
         threshold = _threshold(rule)
         count = len(observation.tool_names)
         return _check(rule, count <= threshold, f"<={threshold}", str(count))
+    if rule.kind == "max_context_tokens":
+        threshold = _threshold(rule)
+        actual = observation.context_tokens
+        return _check(
+            rule,
+            actual is not None and actual <= threshold,
+            f"<={threshold}",
+            str(actual),
+        )
     if rule.kind == "evidence_cautious":
         zero_result = any(
             pattern.search(observation.output_text) for pattern in _ZERO_RESULT_PATTERNS
