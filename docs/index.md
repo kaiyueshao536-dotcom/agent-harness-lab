@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: 版本复盘
       link: /version-history/
+    - theme: alt
+      text: 学习复盘
+      link: /learning/
 
 features:
   - title: OpenSpec 变更
@@ -26,4 +29,6 @@ features:
     details: 查看真实日志、告警、知识检索与诊断案例的使用文档。
   - title: 版本复盘
     details: 按 P 版本查看目标、实现、验证结果、设计取舍、已知限制和回退方式。
+  - title: 学习复盘
+    details: 用真实 Trace、评测结果和故障演练记录项目的数据流、问题定位与知识盲区。
 ---
