@@ -43,6 +43,7 @@
 - SOP 上传与索引补齐 incident、alert、service、sopId 等受控元数据，同时保持服务器 owner/tenant 边界。
 - Planner 持久化安全的 retrieval Context Snapshot，前端可解释检索策略、来源角色、分数和退化原因。
 - 混合语料测试与 P3.3 离线 Gate 将真实历史污染问题转为可重复防回归检查。
+- 发布后使用真实支付告警 Trace 创建 P3.3 专用不可变 Dataset；4 类确定性规则全部通过，报告中的 5 个已知历史污染词均未出现。
 
 ## 维护规则
 
