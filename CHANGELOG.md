@@ -7,21 +7,16 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P3 | 2026-08-08 | Trace 驱动的外部工具失败恢复闭环 | 以不可变 Tag 指向为准 | [`p3-trace-driven-tool-failure-recovery`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3-trace-driven-tool-failure-recovery) | [P3 复盘](docs/version-history/p3-trace-driven-tool-failure-recovery.md) |
 | P2 | 2026-08-08 | 自动评测 Harness | [`f58cf18`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/f58cf18d815f66977ab3de7a2e62aca61733e128) | [`p2-agent-evaluation-harness`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p2-agent-evaluation-harness) | [P2 复盘](docs/version-history/p2-agent-evaluation-harness.md) |
 | P1 | 2026-08-06 | 统一 Agent Trace | [`e3e7aac`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/e3e7aac9f009d37b4f5bc4f21007e05747f6c0a1) | [`p1-unified-agent-trace`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p1-unified-agent-trace) | [P1 复盘](docs/version-history/p1-unified-agent-trace.md) |
 | P0 | 2026-08-06 | 工程展示底座 | [`b0c0937`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/b0c093789a5143215e04b0384f63e0136682db64) | [`p0-engineering-foundation`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p0-engineering-foundation) | [P0 复盘](docs/version-history/p0-engineering-foundation.md) |
 
-## 尚未归入 P 版本
+## P3 同步归档的工程记录
 
-### 2026-08-08：建立版本复盘制度
-
-- 新增本总索引和 P0、P1、P2 的详细复盘文档。
-- 新增统一复盘模板，要求记录目标、范围、关键决策、验证结果、已知限制和回退方法。
-- 在根 README 和 VitePress 文档首页增加版本历史入口。
-- 修复英文架构文档原有的根 README 死链，使文档站恢复可构建状态。
-- 保持既有 P0、P1、P2 Tag 不变，避免破坏已经发布的版本锚点。
-
-这部分将在下一个 P 版本发布时归入对应版本记录。
+- 建立版本复盘制度，补齐 P0、P1、P2 的详细复盘文档与统一模板。
+- 修复 AIOps Tool Span 在缓冲 SSE 消费阶段才创建、耗时不能代表真实调用边界的问题。
+- 新增 MCP Attempt、关联 Job 重试、失败/恢复 Trace 评测与无密钥 P3 fixture。
 
 ## 维护规则
 

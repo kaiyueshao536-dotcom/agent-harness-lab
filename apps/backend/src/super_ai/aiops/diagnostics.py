@@ -17,7 +17,7 @@ from super_ai.aiops.graph import DiagnosticNodes, build_diagnostic_graph
 from super_ai.aiops.state import AiopsDiagnosticState
 from super_ai.error_catalog import ERROR_DEFINITIONS
 from super_ai.llm import LlmProvider
-from super_ai.mcp_client import LocalMcpClient, McpClientError
+from super_ai.mcp_client import LocalMcpClient, McpAttemptEvent, McpClientError
 from super_ai.mcp_connections import McpConnectionService
 from super_ai.memory.repositories import (
     DiagnosticReportRecord,
@@ -121,7 +121,7 @@ class AiopsDiagnosticService:
                 payload=alert,
             )
             initial_evidence_ids.append(alert_evidence.id)
-        graph = self._build_graph()
+        graph = self._build_graph(trace=trace, agent_span_id=agent_span_id)
         pending_complete: dict[str, object] | None = None
         initial_state: AiopsDiagnosticState = {
             "owner_user_id": task.owner_user_id,
@@ -262,11 +262,23 @@ class AiopsDiagnosticService:
             raise McpClientError("MCP client is unavailable.")
         return self._mcp_client
 
-    def _build_graph(self) -> Any:
+    def _build_graph(
+        self,
+        *,
+        trace: AgentTraceContext,
+        agent_span_id: str,
+    ) -> Any:
+        async def traced_executor(state: AiopsDiagnosticState) -> dict[str, object]:
+            return await self._executor(
+                state,
+                trace=trace,
+                parent_span_id=agent_span_id,
+            )
+
         return build_diagnostic_graph(
             DiagnosticNodes(
                 planner=self._planner,
-                executor=self._executor,
+                executor=traced_executor,
                 replanner=self._replanner,
                 reporter=self._report,
                 route_after_replanner=self._route_after_replanner,
@@ -450,7 +462,13 @@ class AiopsDiagnosticService:
             "events": events,
         }
 
-    async def _executor(self, state: AiopsDiagnosticState) -> dict[str, object]:
+    async def _executor(
+        self,
+        state: AiopsDiagnosticState,
+        *,
+        trace: AgentTraceContext,
+        parent_span_id: str,
+    ) -> dict[str, object]:
         task_id = str(state["task_id"])
         owner_user_id = str(state["owner_user_id"])
         plan = cast(list[JsonDict], state.get("plan") or [])
@@ -478,6 +496,52 @@ class AiopsDiagnosticService:
             tool_name=tool_name,
             arguments=arguments,
         )
+        tool_span_id = await self._trace_service.start_span(
+            trace,
+            kind="tool",
+            name=tool_name or "unknown",
+            parent_span_id=parent_span_id,
+            external_id=audit_id,
+            attributes={
+                "toolCallId": audit_id,
+                "toolName": tool_name or "unknown",
+            },
+        )
+        trace.tool_span_ids[audit_id] = tool_span_id
+        attempt_span_ids: dict[int, str] = {}
+
+        async def observe_attempt(attempt: McpAttemptEvent) -> None:
+            if attempt.status == "started":
+                attempt_span_ids[attempt.attempt_number] = await self._trace_service.start_span(
+                    trace,
+                    kind="attempt",
+                    name=f"{tool_name or 'unknown'}.attempt",
+                    parent_span_id=tool_span_id,
+                    external_id=f"{audit_id}:attempt:{attempt.attempt_number}",
+                    attributes={
+                        "attemptNumber": attempt.attempt_number,
+                        "maxAttempts": attempt.max_attempts,
+                        "connectionName": attempt.connection_name,
+                    },
+                )
+                return
+            attempt_span_id = attempt_span_ids.get(attempt.attempt_number)
+            if attempt_span_id is None:
+                return
+            attributes: JsonDict = {
+                "attemptNumber": attempt.attempt_number,
+                "maxAttempts": attempt.max_attempts,
+                "connectionName": attempt.connection_name,
+            }
+            if attempt.error_category is not None:
+                attributes["errorCategory"] = attempt.error_category
+            await self._trace_service.finalize_span(
+                trace,
+                span_id=attempt_span_id,
+                status="succeeded" if attempt.status == "succeeded" else "failed",
+                summary=f"MCP connection attempt {attempt.status}",
+                attributes=attributes,
+            )
 
         try:
             if tool_name == "knowledge_retrieval":
@@ -497,11 +561,27 @@ class AiopsDiagnosticService:
                 }
             elif tool_name:
                 mcp_client = await self._mcp_client_for(owner_user_id)
-                output = await mcp_client.call_tool(tool_name, arguments)
+                output = await mcp_client.call_tool(
+                    tool_name,
+                    arguments,
+                    attempt_observer=observe_attempt,
+                )
             else:
                 raise ValueError("Diagnostic plan did not specify a tool.")
         except Exception as exc:
             safe_error = _safe_error(exc)
+            await self._trace_service.finalize_span(
+                trace,
+                span_id=tool_span_id,
+                status="failed",
+                summary="Tool failed",
+                attributes={
+                    "toolCallId": audit_id,
+                    "toolName": tool_name or "unknown",
+                    "attemptCount": len(attempt_span_ids),
+                    "errorCategory": exc.__class__.__name__,
+                },
+            )
             evidence: JsonDict = {
                 "stepId": str(step.get("id") or f"step_{plan_index + 1}"),
                 "tool": tool_name or "unknown",
@@ -548,6 +628,17 @@ class AiopsDiagnosticService:
                 "events": events,
             }
 
+        await self._trace_service.finalize_span(
+            trace,
+            span_id=tool_span_id,
+            status="succeeded",
+            summary="Tool completed",
+            attributes={
+                "toolCallId": audit_id,
+                "toolName": tool_name,
+                "attemptCount": len(attempt_span_ids),
+            },
+        )
         summary = _tool_result_summary(tool_name, output)
         evidence: JsonDict = {
             "stepId": str(step.get("id") or f"step_{plan_index + 1}"),

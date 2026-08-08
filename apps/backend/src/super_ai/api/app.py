@@ -390,7 +390,13 @@ def create_app(
         job_id: str,
         user: Annotated[UserRecord, Depends(_current_user)],
     ) -> object:
-        job = await _background_job_repository(request).retry(
+        repository = _background_job_repository(request)
+        source = await repository.get(owner_user_id=user.id, job_id=job_id)
+        if source is None:
+            raise ApiErrorException("AUTH_FORBIDDEN")
+        if source.status not in {"failed", "cancelled"}:
+            raise ApiErrorException("BUSINESS_CONFLICT")
+        job = await repository.retry(
             owner_user_id=user.id,
             source_job_id=job_id,
             new_job_id=f"job_{uuid4().hex}",
@@ -1434,8 +1440,7 @@ def create_app(
             timeout_seconds=1800,
         )
         await _background_job_runtime(request).start()
-        payload = _diagnostic_task_payload(task)
-        payload["backgroundJob"] = _background_job_payload(job)
+        payload = _diagnostic_task_payload(task, background_job=job)
         return success_response(
             request,
             payload,
@@ -1472,9 +1477,22 @@ def create_app(
             owner_user_id=user.id,
             time_range=TimeRangeFilter(start_at=start_at, end_at=end_at),
         )
+        jobs = await _background_job_repository(request).list(owner_user_id=user.id)
+        latest_jobs: dict[str, BackgroundJobRecord] = {}
+        for job in jobs:
+            if job.resource_type == "aiops_diagnostic":
+                latest_jobs.setdefault(job.resource_id, job)
         return success_response(
             request,
-            {"items": [_diagnostic_task_payload(task) for task in reversed(tasks)]},
+            {
+                "items": [
+                    _diagnostic_task_payload(
+                        task,
+                        background_job=latest_jobs.get(task.id),
+                    )
+                    for task in reversed(tasks)
+                ]
+            },
         )
 
     @app.get("/aiops/diagnostic-cases")
@@ -1518,7 +1536,15 @@ def create_app(
             owner_user_id=user.id,
             task_id=task.id,
         )
-        return success_response(request, _diagnostic_task_payload(task, reports=reports))
+        job = await _background_job_repository(request).find_for_resource(
+            owner_user_id=user.id,
+            resource_type="aiops_diagnostic",
+            resource_id=task.id,
+        )
+        return success_response(
+            request,
+            _diagnostic_task_payload(task, reports=reports, background_job=job),
+        )
 
     @app.get("/aiops/diagnostics/{diagnostic_id}/evidence-chain")
     async def get_aiops_evidence_chain(
@@ -1533,7 +1559,7 @@ def create_app(
         )
         if task is None:
             raise ApiErrorException("AUTH_FORBIDDEN")
-        steps, evidence, report_links, reports, checkpoints = await asyncio.gather(
+        steps, evidence, report_links, reports, checkpoints, background_job = await asyncio.gather(
             repositories.diagnostics.list_steps(owner_user_id=user.id, task_id=task.id),
             repositories.diagnostics.list_evidence(owner_user_id=user.id, task_id=task.id),
             repositories.diagnostics.list_report_evidence_links(
@@ -1542,6 +1568,11 @@ def create_app(
             ),
             repositories.diagnostics.list_reports(owner_user_id=user.id, task_id=task.id),
             repositories.diagnostics.list_checkpoints(owner_user_id=user.id, task_id=task.id),
+            _background_job_repository(request).find_for_resource(
+                owner_user_id=user.id,
+                resource_type="aiops_diagnostic",
+                resource_id=task.id,
+            ),
         )
         tool_audits = []
         if repositories.tool_call_audits is not None:
@@ -1553,7 +1584,11 @@ def create_app(
         return success_response(
             request,
             {
-                "task": _diagnostic_task_payload(task, reports=reports),
+                "task": _diagnostic_task_payload(
+                    task,
+                    reports=reports,
+                    background_job=background_job,
+                ),
                 "steps": [_diagnostic_step_payload(step) for step in steps],
                 "toolCalls": [_agent_tool_call_audit_payload(audit) for audit in tool_audits],
                 "evidence": [_diagnostic_evidence_payload(item) for item in evidence],
@@ -2454,6 +2489,7 @@ def _diagnostic_task_payload(
     record: DiagnosticTaskRecord,
     *,
     reports: Sequence[DiagnosticReportRecord] = (),
+    background_job: BackgroundJobRecord | None = None,
 ) -> dict[str, object]:
     return {
         "id": record.id,
@@ -2466,6 +2502,9 @@ def _diagnostic_task_payload(
         "updatedAt": record.updated_at.isoformat(),
         "completedAt": record.completed_at.isoformat() if record.completed_at is not None else None,
         "reports": [_diagnostic_report_payload(report) for report in reports],
+        "backgroundJob": (
+            _background_job_payload(background_job) if background_job is not None else None
+        ),
     }
 
 

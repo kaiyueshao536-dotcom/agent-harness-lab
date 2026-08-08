@@ -4,6 +4,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,7 +16,13 @@ from alembic.config import Config
 from super_ai.aiops import AiopsDiagnosticService, DiagnosisCasePersistor
 from super_ai.api.app import AiopsDiagnosticRunner, create_app
 from super_ai.llm import LlmProvider, RerankResult
-from super_ai.mcp_client import LocalMcpClient, McpClientError, McpToolDefinition
+from super_ai.mcp_client import (
+    LocalMcpClient,
+    McpAttemptEvent,
+    McpAttemptObserver,
+    McpClientError,
+    McpToolDefinition,
+)
 from super_ai.memory.database import create_memory_engine, create_memory_session_factory
 from super_ai.memory.repositories import DiagnosticTaskRecord, TenantScopeError
 from super_ai.memory.sqlite import create_sqlite_memory_repositories
@@ -181,10 +188,30 @@ class FakeMcpClient:
     async def discover_tools(self) -> list[McpToolDefinition]:
         return [McpToolDefinition("SearchLog", "Search real logs", {})]
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> object:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        attempt_observer: McpAttemptObserver | None = None,
+    ) -> object:
         self.calls.append((name, arguments))
+        if attempt_observer is not None:
+            await attempt_observer(McpAttemptEvent(1, 1, "cls", "started"))
         if self.error is not None:
+            if attempt_observer is not None:
+                await attempt_observer(
+                    McpAttemptEvent(
+                        1,
+                        1,
+                        "cls",
+                        "failed",
+                        self.error.__class__.__name__,
+                    )
+                )
             raise self.error
+        if attempt_observer is not None:
+            await attempt_observer(McpAttemptEvent(1, 1, "cls", "succeeded"))
         return [
             {
                 "type": "text",
@@ -352,6 +379,25 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
         "replanner",
         "report",
         "tool",
+        "attempt",
+    }
+    search_tool_span = next(
+        span for span in trace_spans if span.kind == "tool" and span.name == "SearchLog"
+    )
+    attempt_span = next(span for span in trace_spans if span.kind == "attempt")
+    assert search_tool_span.parent_span_id == next(
+        span.id for span in trace_spans if span.name == "aiops.graph"
+    )
+    assert attempt_span.parent_span_id == search_tool_span.id
+    assert search_tool_span.completed_at is not None
+    assert search_tool_span.completed_at >= search_tool_span.started_at
+    assert search_tool_span.duration_ms is not None
+    assert attempt_span.completed_at is not None
+    assert attempt_span.completed_at >= attempt_span.started_at
+    assert attempt_span.attributes == {
+        "attemptNumber": 1,
+        "maxAttempts": 1,
+        "connectionName": "cls",
     }
     assert any(event["type"] == "reference.source" for event in events)
     assert len(cases) == 1
@@ -386,6 +432,7 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
             status="accepted",
             query="Investigate missing logs",
         )
+        mcp = FakeMcpClient(error=McpClientError("CLS unavailable"))
         service = AiopsDiagnosticService(
             repositories=repositories,
             llm_provider=cast(
@@ -397,7 +444,7 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
                 vector_store=FakeVectorStore([]),
                 rerank_model=FakeRerankModel(),
             ),
-            mcp_client=cast(LocalMcpClient, FakeMcpClient(error=McpClientError("CLS unavailable"))),
+            mcp_client=cast(LocalMcpClient, mcp),
             cls_region="ap-guangzhou",
             cls_topic_id="topic-a",
             case_persistor=DiagnosisCasePersistor(
@@ -422,6 +469,31 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
             task_id=task.id,
         )
         cases = await repositories.diagnostics.list_cases(owner_user_id="user-a")
+        trace_repository = repositories.agent_traces
+        assert trace_repository is not None
+        failed_traces = await trace_repository.list_traces(
+            owner_user_id="user-a",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+        )
+
+        mcp.error = None
+        retry_events = [
+            event
+            async for event in service.stream(
+                task=cast(DiagnosticTaskRecord, persisted),
+                accessible_knowledge_base_ids=("kb_user-a",),
+            )
+        ]
+        recovered = await repositories.diagnostics.get_task(
+            owner_user_id="user-a",
+            task_id=task.id,
+        )
+        all_traces = await trace_repository.list_traces(
+            owner_user_id="user-a",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+        )
     finally:
         await engine.dispose()
 
@@ -436,6 +508,13 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
     assert any(event["type"] == "error" for event in events)
     assert any(_is_failed_tool_event(event) for event in events)
     assert cases == []
+    assert len(failed_traces) == 1 and failed_traces[0].status == "failed"
+    assert recovered is not None and recovered.status == "succeeded"
+    assert len(all_traces) == 2
+    assert {trace.status for trace in all_traces} == {"failed", "succeeded"}
+    assert len({trace.id for trace in all_traces}) == 2
+    assert all(trace.resource_id == task.id for trace in all_traces)
+    assert any(event["type"] == "complete" for event in retry_events)
 
 
 @dataclass
@@ -505,9 +584,84 @@ async def test_aiops_stream_requires_task_owner(migrated_database_url: str) -> N
     assert runner.calls == [diagnostic_id]
     assert history.status_code == 200
     assert [item["id"] for item in history.json()["data"]["items"]] == [diagnostic_id]
+    assert history.json()["data"]["items"][0]["backgroundJob"]["resourceId"] == diagnostic_id
     assert owner_chain.status_code == 200
     assert owner_chain.json()["data"]["task"]["id"] == diagnostic_id
+    assert owner_chain.json()["data"]["task"]["backgroundJob"]["resourceId"] == diagnostic_id
     assert denied_chain.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_failed_aiops_job_retry_preserves_source_and_exposes_latest_job(
+    migrated_database_url: str,
+) -> None:
+    app = create_app(database_url=migrated_database_url)
+    repository = app.state.memory_repositories.background_jobs
+    assert repository is not None
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        owner = await _register(client, "retry-owner@example.com")
+        other = await _register(client, "retry-other@example.com")
+        task = await app.state.memory_repositories.diagnostics.create_task(
+            owner_user_id=owner["user"]["id"],
+            task_id="diagnostic-retry",
+            status="failed",
+            query="Retry failed SearchLog",
+        )
+        source = await repository.enqueue(
+            owner_user_id=owner["user"]["id"],
+            job_id="job-failed-aiops",
+            kind="aiops_diagnosis",
+            resource_type="aiops_diagnostic",
+            resource_id=task.id,
+            payload={"diagnosticId": task.id},
+            max_attempts=1,
+        )
+        claimed = await repository.claim_next(
+            worker_id="failed-worker",
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=30),
+        )
+        assert claimed is not None and claimed.id == source.id
+        source = await repository.handle_failure(
+            job_id=source.id,
+            worker_id="failed-worker",
+            error_message="safe failure",
+            retry_at=datetime.now(timezone.utc),
+        )
+        assert source is not None and source.status == "failed"
+
+        denied = await client.post(
+            f"/background-jobs/{source.id}:retry",
+            headers=_auth_headers(other["accessToken"]),
+        )
+        retried = await client.post(
+            f"/background-jobs/{source.id}:retry",
+            headers=_auth_headers(owner["accessToken"]),
+        )
+        retry_payload = retried.json()["data"]
+        non_terminal_retry = await client.post(
+            f"/background-jobs/{retry_payload['id']}:retry",
+            headers=_auth_headers(owner["accessToken"]),
+        )
+        detail = await client.get(
+            f"/aiops/diagnostics/{task.id}",
+            headers=_auth_headers(owner["accessToken"]),
+        )
+
+    assert denied.status_code == 403
+    assert retried.status_code == 202
+    assert non_terminal_retry.status_code == 409
+    assert retry_payload["id"] != source.id
+    assert retry_payload["retryOfJobId"] == source.id
+    assert retry_payload["resourceId"] == task.id
+    assert detail.status_code == 200
+    assert detail.json()["data"]["backgroundJob"]["id"] == retry_payload["id"]
+    preserved = await repository.get(
+        owner_user_id=owner["user"]["id"],
+        job_id=source.id,
+    )
+    assert preserved is not None and preserved.status == "failed"
+    await app.state.background_job_runtime.stop()
 
 
 @pytest.mark.asyncio

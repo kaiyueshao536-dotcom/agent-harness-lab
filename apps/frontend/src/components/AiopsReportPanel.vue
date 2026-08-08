@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileCheck2, FileClock, FileWarning } from "lucide-vue-next";
+import { FileCheck2, FileClock, FileWarning, RotateCcw } from "lucide-vue-next";
 
 import MarkdownContent from "./MarkdownContent.vue";
 import UserFeedbackControl from "./UserFeedbackControl.vue";
@@ -16,7 +16,11 @@ defineProps<{
   readonly isRunning: boolean;
   readonly hasTask: boolean;
   readonly taskFailed: boolean;
+  readonly canRetry?: boolean;
+  readonly retrying?: boolean;
 }>();
+
+defineEmits<{ retry: [] }>();
 </script>
 
 <template>
@@ -54,6 +58,16 @@ defineProps<{
     </div>
 
     <div v-else-if="taskFailed" class="aiops-report__empty aiops-report__empty--failed">
+      <button
+        v-if="canRetry"
+        class="aiops-report__retry"
+        type="button"
+        :disabled="retrying"
+        @click="$emit('retry')"
+      >
+        <RotateCcw :size="15" aria-hidden="true" />
+        {{ retrying ? "正在重新执行" : "重试本次诊断" }}
+      </button>
       <FileWarning :size="22" aria-hidden="true" />
       <div>
         <strong>本次诊断未沉淀报告</strong>
@@ -91,5 +105,7 @@ defineProps<{
 .aiops-report__empty p { font-size: 0.78rem; line-height: 1.55; margin: 0.3rem 0 0; }
 .aiops-report__empty--running { background: var(--status-running-bg); border-color: var(--status-running-border); color: var(--status-running-text); }
 .aiops-report__empty--failed { background: var(--status-danger-bg); border-color: var(--status-danger-border); color: var(--status-danger-text); }
+.aiops-report__retry { align-items: center; background: var(--surface-raised); border: 1px solid currentColor; color: inherit; cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; font-weight: 700; gap: 0.4rem; min-height: 2.1rem; padding: 0.35rem 0.65rem; }
+.aiops-report__retry:disabled { cursor: wait; opacity: 0.6; }
 @media (max-width: 560px) { .aiops-report { padding: 1rem; } .aiops-report__meta { align-items: flex-start; flex-direction: column; } .aiops-report__meta time { white-space: normal; } }
 </style>

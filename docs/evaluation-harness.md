@@ -41,6 +41,7 @@ flowchart LR
 ```bash
 cd apps/backend
 uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
+uv run super-ai-eval ../../evals/fixtures/p3-tool-recovery-pass.json
 ```
 
 CLI 严格校验 JSON fixture，输出 JSON 报告。门禁通过退出码为 `0`，门禁失败为 `1`，fixture 无效为 `2`。CI 使用 `p2-smoke-pass.json`，不读取 Qwen、Milvus、MCP 或 CLS 密钥。

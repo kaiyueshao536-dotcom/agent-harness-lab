@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import monotonic
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -36,6 +36,18 @@ class McpServerConnection:
     transport: str = "sse"
     timeout_seconds: float = 15
     retries: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class McpAttemptEvent:
+    attempt_number: int
+    max_attempts: int
+    connection_name: str
+    status: Literal["started", "succeeded", "failed"]
+    error_category: str | None = None
+
+
+McpAttemptObserver = Callable[[McpAttemptEvent], Awaitable[None]]
 
 
 class McpClientError(RuntimeError):
@@ -137,7 +149,13 @@ class LocalMcpClient:
             "error": None,
         }
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        attempt_observer: McpAttemptObserver | None = None,
+    ) -> Any:
         started_at = monotonic()
         emit_event(logger, "mcp.tool.started", toolName=name, argumentKeys=sorted(arguments))
         try:
@@ -150,7 +168,8 @@ class LocalMcpClient:
                         read_timeout_seconds=timedelta(
                             seconds=connection.timeout_seconds
                         ),
-                    )
+                    ),
+                    attempt_observer=attempt_observer,
                 )
             else:
                 matching = [tool for tool in await self.discover_tools() if tool.name == name]
@@ -168,6 +187,7 @@ class LocalMcpClient:
                             seconds=connection.timeout_seconds
                         ),
                     ),
+                    attempt_observer=attempt_observer,
                 )
         except Exception as exc:
             emit_event(
@@ -199,27 +219,89 @@ class LocalMcpClient:
         )
         return payload
 
-    async def _run(self, operation: Callable[[Any], Awaitable[Any]]) -> Any:
+    async def _run(
+        self,
+        operation: Callable[[Any], Awaitable[Any]],
+        *,
+        attempt_observer: McpAttemptObserver | None = None,
+    ) -> Any:
         if len(self._connections) != 1:
             raise McpClientError("A single MCP connection is required for this operation.")
-        return await self._run_connection(self._connections[0], operation)
+        return await self._run_connection(
+            self._connections[0],
+            operation,
+            attempt_observer=attempt_observer,
+        )
 
     async def _run_connection(
         self,
         connection: McpServerConnection,
         operation: Callable[[Any], Awaitable[Any]],
+        *,
+        attempt_observer: McpAttemptObserver | None = None,
     ) -> Any:
         error: Exception | None = None
-        for attempt in range(connection.retries + 1):
+        max_attempts = connection.retries + 1
+        for attempt_index in range(max_attempts):
+            attempt_number = attempt_index + 1
+            await self._notify_attempt(
+                attempt_observer,
+                McpAttemptEvent(
+                    attempt_number=attempt_number,
+                    max_attempts=max_attempts,
+                    connection_name=connection.name,
+                    status="started",
+                ),
+            )
             try:
                 if connection.transport == "streamable_http":
-                    return await self._run_streamable_http(connection, operation)
-                return await self._run_sse(connection, operation)
+                    result = await self._run_streamable_http(connection, operation)
+                else:
+                    result = await self._run_sse(connection, operation)
             except Exception as exc:
                 error = exc
-                if attempt < connection.retries:
-                    await asyncio.sleep(0.2 * (attempt + 1))
+                await self._notify_attempt(
+                    attempt_observer,
+                    McpAttemptEvent(
+                        attempt_number=attempt_number,
+                        max_attempts=max_attempts,
+                        connection_name=connection.name,
+                        status="failed",
+                        error_category=exc.__class__.__name__,
+                    ),
+                )
+                if attempt_number < max_attempts:
+                    await asyncio.sleep(min(2.0, 0.2 * (2**attempt_index)))
+                continue
+            await self._notify_attempt(
+                attempt_observer,
+                McpAttemptEvent(
+                    attempt_number=attempt_number,
+                    max_attempts=max_attempts,
+                    connection_name=connection.name,
+                    status="succeeded",
+                ),
+            )
+            return result
         raise McpClientError(f"MCP server unavailable at {connection.url}") from error
+
+    async def _notify_attempt(
+        self,
+        observer: McpAttemptObserver | None,
+        event: McpAttemptEvent,
+    ) -> None:
+        if observer is None:
+            return
+        try:
+            await observer(event)
+        except Exception as exc:
+            emit_event(
+                logger,
+                "mcp.attempt_observer.failed",
+                connectionName=event.connection_name,
+                attemptNumber=event.attempt_number,
+                errorCategory=exc.__class__.__name__,
+            )
 
     async def _run_sse(
         self,

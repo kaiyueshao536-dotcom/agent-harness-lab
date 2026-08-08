@@ -25,6 +25,7 @@ const minPassRate = ref(1);
 const minAverageScore = ref(0.8);
 const maxDurationRegressionPercent = ref<number | null>(20);
 const stagedCases = ref<EvaluationCaseInput[]>([]);
+const stagedRules = ref<EvaluationRule[]>([]);
 const caseName = ref("");
 const caseExecutionType = ref<"chat" | "aiops">("chat");
 const caseInputSummary = ref("");
@@ -53,7 +54,7 @@ const canRun = computed(() => {
 onMounted(() => {
   void Promise.all([
     evaluations.initialize(),
-    createTraceClient().listTraces({ status: "succeeded", limit: 100 }).then((value) => {
+    createTraceClient().listTraces({ limit: 100 }).then((value) => {
       traces.value = value.items;
     })
   ]).catch(() => undefined);
@@ -81,17 +82,33 @@ function buildRule(): EvaluationRule | null {
   return { kind: "trace_succeeded", values: [], threshold: null, description: "" };
 }
 
-function addCase(): void {
+function addRule(): void {
   const rule = buildRule();
-  if (rule === null || caseName.value.trim() === "" || caseInputSummary.value.trim() === "") return;
+  if (rule === null) return;
+  stagedRules.value = [...stagedRules.value, rule];
+  ruleKind.value = "trace_succeeded";
+  ruleValue.value = "";
+}
+
+function addCase(): void {
+  const currentRule = buildRule();
+  const rules = stagedRules.value.length > 0
+    ? stagedRules.value
+    : (currentRule === null ? [] : [currentRule]);
+  if (
+    rules.length === 0
+    || caseName.value.trim() === ""
+    || caseInputSummary.value.trim() === ""
+  ) return;
   stagedCases.value = [...stagedCases.value, {
     name: caseName.value.trim(),
     executionType: caseExecutionType.value,
     inputSummary: caseInputSummary.value.trim(),
-    rules: [rule]
+    rules: [...rules]
   }];
   caseName.value = "";
   caseInputSummary.value = "";
+  stagedRules.value = [];
   ruleKind.value = "trace_succeeded";
   ruleValue.value = "";
 }
@@ -111,6 +128,7 @@ async function createDataset(): Promise<void> {
   });
   showCreate.value = false;
   stagedCases.value = [];
+  stagedRules.value = [];
 }
 
 async function selectDataset(datasetId: string): Promise<void> {
@@ -173,6 +191,14 @@ function caseNameFor(caseId: string): string {
           <label>最大耗时回退 %<input v-model.number="maxDurationRegressionPercent" type="number" min="0" /></label>
         </div>
         <div class="case-builder">
+          <div class="rule-staging">
+            <button class="secondary" type="button" @click="addRule"><Plus :size="15" /> 暂存当前规则</button>
+            <ol v-if="stagedRules.length > 0">
+              <li v-for="(item, index) in stagedRules" :key="`${item.kind}-${index}`">
+                {{ index + 1 }}. {{ item.kind }}
+              </li>
+            </ol>
+          </div>
           <h3>添加案例</h3>
           <div class="evaluation-grid">
             <label>案例名<input v-model="caseName" placeholder="知识库回答包含出处" /></label>
@@ -199,7 +225,7 @@ function caseNameFor(caseId: string): string {
           <div class="binding-list">
             <label v-for="item in evaluations.selectedDataset.cases" :key="item.id">
               <span><strong>{{ item.sequence }}. {{ item.name }}</strong><small>{{ item.executionType }} · {{ item.inputSummary }}</small></span>
-              <select v-model="traceBindings[item.id]"><option value="">选择成功 Trace</option><option v-for="trace in tracesFor(item.executionType)" :key="trace.id" :value="trace.id">{{ trace.summary || trace.resourceId }} · {{ trace.durationMs ?? '—' }} ms</option></select>
+              <select v-model="traceBindings[item.id]"><option value="">选择 Trace（成功或失败）</option><option v-for="trace in tracesFor(item.executionType)" :key="trace.id" :value="trace.id">[{{ trace.status }}] {{ trace.summary || trace.resourceId }} · {{ trace.durationMs ?? '—' }} ms</option></select>
             </label>
           </div>
           <div class="run-controls"><label>候选版本<input v-model="candidateLabel" /></label><label>对比基线<select v-model="baselineRunId"><option value="">不对比</option><option v-for="runItem in evaluations.runs" :key="runItem.id" :value="runItem.id">{{ runItem.candidateLabel }} · {{ percentage(runItem.averageScore) }}</option></select></label><button class="primary" type="button" :disabled="!canRun || evaluations.isRunning" @click="run(submitRun)"><Play :size="16" /> {{ evaluations.isRunning ? '评测中…' : '运行评测' }}</button></div>
@@ -249,6 +275,9 @@ label { color: var(--text-secondary); display: grid; font-size: .72rem; gap: .35
 input, select, textarea { background: var(--surface); border: 1px solid var(--line-strong); border-radius: .4rem; color: var(--text-primary); min-height: 2.35rem; padding: .45rem .6rem; width: 100%; }
 .case-builder { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: 1rem; }
 .case-builder h3 { font-size: .9rem; margin-bottom: .7rem; }
+.rule-staging { align-items: center; display: flex; gap: .75rem; justify-content: flex-end; }
+.rule-staging .secondary { margin-top: 0; }
+.rule-staging ol { color: var(--text-secondary); display: flex; flex-wrap: wrap; font-size: .7rem; gap: .8rem; margin: 0; }
 .secondary { border: 1px solid var(--line-strong); margin-top: .75rem; }
 .primary { background: var(--accent-strong); color: white; font-weight: 700; justify-content: center; }
 .evaluation-create > .primary { margin-top: 1rem; }

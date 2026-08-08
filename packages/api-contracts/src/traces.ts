@@ -6,6 +6,7 @@ export type AgentTraceSpanKind =
   | "executor"
   | "replanner"
   | "tool"
+  | "attempt"
   | "retrieval"
   | "model"
   | "report";

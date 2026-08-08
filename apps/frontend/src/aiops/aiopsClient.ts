@@ -17,6 +17,7 @@ import { API_BASE_URL } from "../config";
 
 export interface AiopsClient {
   cancelBackgroundJob?(jobId: string): Promise<BackgroundJob>;
+  retryBackgroundJob?(jobId: string): Promise<BackgroundJob>;
   createDiagnostic(request: CreateAiopsDiagnosticRequest): Promise<AiopsDiagnosticSummary>;
   getEvidenceChain(diagnosticId: string): Promise<AiopsDiagnosticEvidenceChain>;
   listActiveAlerts(): Promise<ActiveAlertListResponse>;
@@ -45,6 +46,8 @@ export function createAiopsClient(options: CreateAiopsClientOptions = {}): Aiops
   return {
     cancelBackgroundJob: (jobId) =>
       api.request<BackgroundJob>(`/background-jobs/${jobId}:cancel`, { method: "POST" }),
+    retryBackgroundJob: (jobId) =>
+      api.request<BackgroundJob>(`/background-jobs/${jobId}:retry`, { method: "POST" }),
     createDiagnostic: (request) => api.request<AiopsDiagnosticSummary>("/aiops/diagnostics", {
       body: JSON.stringify(request),
       method: "POST"

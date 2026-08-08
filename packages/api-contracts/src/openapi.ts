@@ -1029,7 +1029,7 @@ export const OPENAPI_CONTRACT = {
           externalId: { type: ["string", "null"] },
           sequence: { type: "integer", minimum: 1 },
           kind: {
-            enum: ["agent", "planner", "executor", "replanner", "tool", "retrieval", "model", "report"]
+            enum: ["agent", "planner", "executor", "replanner", "tool", "attempt", "retrieval", "model", "report"]
           },
           name: { type: "string" },
           status: { enum: ["running", "succeeded", "failed"] },
@@ -2049,7 +2049,7 @@ export const OPENAPI_CONTRACT = {
         properties: {
           id: { type: "string" },
           ownerUserId: { type: "string" },
-          status: { enum: ["accepted", "running", "succeeded", "failed"] },
+          status: { enum: ["accepted", "running", "succeeded", "failed", "cancelled"] },
           query: { type: "string" },
           inputPayload: { type: "object", additionalProperties: true },
           resultPayload: { type: "object", additionalProperties: true },
@@ -2059,6 +2059,12 @@ export const OPENAPI_CONTRACT = {
           reports: {
             type: "array",
             items: { $ref: "#/components/schemas/AiopsDiagnosticReport" }
+          },
+          backgroundJob: {
+            oneOf: [
+              { $ref: "#/components/schemas/BackgroundJob" },
+              { type: "null" }
+            ]
           }
         }
       },

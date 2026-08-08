@@ -9,6 +9,7 @@
 - [P0：工程展示底座](p0-engineering-foundation.md)
 - [P1：统一 Agent Trace](p1-unified-agent-trace.md)
 - [P2：自动评测 Harness](p2-agent-evaluation-harness.md)
+- [P3：Trace 驱动的外部工具失败恢复闭环](p3-trace-driven-tool-failure-recovery.md)
 
 ## 信息来源与可信度
 

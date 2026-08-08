@@ -18,11 +18,12 @@ afterEach(() => {
 describe("Evaluation workspace", () => {
   it("renders gate metrics, failed checks, and a Trace link", async () => {
     setEvaluationClientFactoryForTests(() => fakeClient());
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,
-      data: { items: [trace()] },
+      data: { items: [trace(), { ...trace(), id: "trace-failed", status: "failed" }] },
       meta: { requestId: "request-1" }
-    }), { status: 200, headers: { "content-type": "application/json" } })));
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
     setActivePinia(createPinia());
 
     const wrapper = mount(EvaluationView, {
@@ -39,10 +40,43 @@ describe("Evaluation workspace", () => {
     expect(wrapper.text()).toContain("+5 pt");
     expect(wrapper.text()).toContain("查看 Trace trace-1");
     expect(wrapper.findAll("select").length).toBeGreaterThan(1);
+    expect(wrapper.find('option[value="trace-failed"]').exists()).toBe(true);
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("status=");
+  });
+  it("stages multiple rules before saving one evaluation case", async () => {
+    const savedRuleCounts: number[] = [];
+    setEvaluationClientFactoryForTests(() => fakeClient({
+      onCreate: (count) => savedRuleCounts.push(count)
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      data: { items: [trace()] },
+      meta: { requestId: "request-1" }
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    setActivePinia(createPinia());
+    const wrapper = mount(EvaluationView, {
+      global: { stubs: { RouterLink: { template: "<a><slot /></a>" } } }
+    });
+    await flushPromises();
+    await wrapper.get(".evaluation-view__catalog header button").trigger("click");
+
+    const builder = wrapper.get(".case-builder");
+    const inputs = builder.findAll("input");
+    await inputs[0]!.setValue("Recovery case");
+    await inputs[1]!.setValue("Retry SearchLog and recover");
+    const stageRule = builder.get(".rule-staging button");
+    await stageRule.trigger("click");
+    await stageRule.trigger("click");
+    const caseButtons = builder.findAll("button.secondary");
+    await caseButtons[caseButtons.length - 1]!.trigger("click");
+    await wrapper.get(".evaluation-create > button.primary").trigger("click");
+    await flushPromises();
+
+    expect(savedRuleCounts).toEqual([2]);
   });
 });
 
-function fakeClient(): EvaluationClient {
+function fakeClient(options: { readonly onCreate?: (ruleCount: number) => void } = {}): EvaluationClient {
   const dataset = {
     id: "dataset-1",
     name: "Core regression",
@@ -106,7 +140,10 @@ function fakeClient(): EvaluationClient {
     }]
   };
   return {
-    createDataset: async () => dataset,
+    createDataset: async (request) => {
+      options.onCreate?.(request.cases[0]?.rules.length ?? 0);
+      return dataset;
+    },
     getDataset: async () => dataset,
     listDatasets: async () => ({ items: [dataset] }),
     listRuns: async () => ({ items: [run] }),

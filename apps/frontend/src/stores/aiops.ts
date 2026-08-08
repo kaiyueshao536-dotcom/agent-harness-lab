@@ -148,6 +148,52 @@ export const useAiopsStore = defineStore("aiops", () => {
     });
   }
 
+  async function retryActive(): Promise<void> {
+    const current = activeTask.value;
+    const sourceJob = current?.backgroundJob;
+    if (
+      current === null
+      || sourceJob === undefined
+      || !["failed", "cancelled"].includes(sourceJob.status)
+      || client.retryBackgroundJob === undefined
+    ) return;
+    isRunning.value = true;
+    errorMessage.value = null;
+    liveEvents.value = [];
+    try {
+      const retriedJob = await client.retryBackgroundJob(sourceJob.id);
+      activeTask.value = {
+        ...current,
+        status: "accepted",
+        completedAt: null,
+        backgroundJob: retriedJob
+      };
+      upsertHistory(activeTask.value);
+      for await (const event of client.streamDiagnostic(current.id)) {
+        liveEvents.value = [...liveEvents.value, event];
+        if (event.type === "error") reportError(new ApiClientError(event.error));
+      }
+      await Promise.all([
+        loadEvidenceChain(current.id),
+        reloadHistory(),
+        reloadDiagnosticCases()
+      ]);
+    } catch (error) {
+      reportError(error);
+      try {
+        await Promise.all([
+          loadEvidenceChain(current.id),
+          reloadHistory(),
+          reloadDiagnosticCases()
+        ]);
+      } catch (reconciliationError) {
+        reportError(reconciliationError);
+      }
+    } finally {
+      isRunning.value = false;
+    }
+  }
+
   return {
     activeDiagnosticId,
     activeAlerts,
@@ -194,6 +240,7 @@ export const useAiopsStore = defineStore("aiops", () => {
     refreshActiveAlerts: reloadActiveAlerts,
     refreshDiagnosticCases: reloadDiagnosticCases,
     runDiagnostic,
+    retryActive,
     cancelActive: async (): Promise<void> => {
       const jobId = activeTask.value?.backgroundJob?.id;
       if (jobId === undefined || client.cancelBackgroundJob === undefined) return;

@@ -25,6 +25,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **RAG**：Markdown/PDF 切分，Milvus 向量检索与 BM25L 并行召回，RRF 融合、Qwen rerank 和可解释排名。
 - **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
 - **自动评测 Harness**：不可变版本数据集把真实 Trace 绑定到确定性质量规则，生成逐案例检查、聚合指标、质量门禁和同数据集基线差异；离线 CLI 与 CI 无需模型或云服务密钥。
+- **工具失败恢复闭环**：MCP 连接重试以 `Tool → Attempt` 父子 Span 留痕；失败诊断可关联原 Job 重新执行，保留旧 Job/Trace，并用同一评测数据集验证恢复结果。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -64,6 +65,7 @@ Alertmanager 活跃告警
   → 保存为用户知识库案例
   → 在“执行追踪”中按 traceId 查看 Planner / Executor / Tool / Report Span
   → 在“自动评测”中创建数据集版本、绑定 Trace、运行门禁并对比基线
+  → 外部工具失败时定位具体 Attempt，修复后关联重试并生成新 Trace
 ```
 
 演示数据的上传和触发都是显式操作。完整步骤见[真实日志与告警教程](docs/tutorials/real-log-and-alert.md)。
@@ -145,6 +147,7 @@ uv sync --frozen --dev
 uv run ruff check .
 uv run pyright
 uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
+uv run super-ai-eval ../../evals/fixtures/p3-tool-recovery-pass.json
 uv run pytest
 ```
 

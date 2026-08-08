@@ -109,6 +109,24 @@ describe("AIOps components", () => {
     expect(wrapper.text()).toContain("正在等待诊断证据汇总");
   });
 
+  it("offers one explicit retry action for a recoverable failed diagnosis", async () => {
+    const wrapper = mount(AiopsReportPanel, {
+      props: {
+        report: null,
+        isRunning: false,
+        hasTask: true,
+        taskFailed: true,
+        canRetry: true,
+        retrying: false
+      }
+    });
+
+    const retry = wrapper.get("button.aiops-report__retry");
+    expect(retry.text()).toContain("重试本次诊断");
+    await retry.trigger("click");
+    expect(wrapper.emitted("retry")).toEqual([[]]);
+  });
+
   it("lists a server-backed diagnosis case and selects its task", async () => {
     const longSummary = `# 告警分析报告\n\n${"长报告内容".repeat(80)}`;
     const wrapper = mount(AiopsCaseLibrary, {

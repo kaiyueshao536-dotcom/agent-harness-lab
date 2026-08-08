@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Bot, BrainCircuit, Database, FileText, Wrench } from "lucide-vue-next";
+import { Bot, BrainCircuit, Database, FileText, RefreshCw, Wrench } from "lucide-vue-next";
 
 import type { AgentTraceSpan, AgentTraceSpanKind } from "@agent-py/api-contracts";
 
@@ -14,6 +14,7 @@ const labels: Record<AgentTraceSpanKind, string> = {
   executor: "执行",
   replanner: "重规划",
   tool: "工具",
+  attempt: "尝试",
   retrieval: "检索",
   model: "模型",
   report: "报告"
@@ -21,6 +22,7 @@ const labels: Record<AgentTraceSpanKind, string> = {
 
 function iconFor(kind: AgentTraceSpanKind) {
   if (kind === "tool") return Wrench;
+  if (kind === "attempt") return RefreshCw;
   if (kind === "retrieval") return Database;
   if (kind === "report") return FileText;
   if (kind === "model" || kind === "planner" || kind === "replanner") return BrainCircuit;

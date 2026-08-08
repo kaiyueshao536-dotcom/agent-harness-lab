@@ -89,6 +89,7 @@ describe("HTTP response contracts", () => {
 
   it("documents background job, feedback, and MCP connection APIs", () => {
     expect(OPENAPI_CONTRACT.paths["/background-jobs"]?.get).toBeDefined();
+    expect(OPENAPI_CONTRACT.paths["/background-jobs/{jobId}:retry"]?.post).toBeDefined();
     expect(OPENAPI_CONTRACT.paths["/feedback"]?.post).toBeDefined();
     expect(OPENAPI_CONTRACT.paths["/mcp/connections"]?.get).toBeDefined();
     expect(OPENAPI_CONTRACT.paths["/mcp/connections/{connectionId}:check"]?.post).toBeDefined();
@@ -132,6 +133,9 @@ describe("HTTP response contracts", () => {
     };
 
     expect(job.status).toBe("queued");
+    expect(
+      OPENAPI_CONTRACT.components.schemas.AiopsDiagnosticResponse.properties.backgroundJob
+    ).toBeDefined();
     expect(feedback.rating).toBe("positive");
     expect(connection.transport).toBe("sse");
   });

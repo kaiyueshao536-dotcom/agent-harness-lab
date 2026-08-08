@@ -23,6 +23,10 @@ const toolCallCount = computed(() => aiops.evidenceChain?.toolCalls.length ?? 0)
 const isEffectivelyRunning = computed(
   () => aiops.isRunning || aiops.activeTask?.status === "running"
 );
+const canRetryActive = computed(() => {
+  const status = aiops.activeTask?.backgroundJob?.status;
+  return status === "failed" || status === "cancelled";
+});
 const activeReport = computed<AiopsReportDisplay | null>(() => {
   const reports = aiops.evidenceChain?.reports ?? [];
   if (reports.length > 0) {
@@ -108,10 +112,13 @@ function openCaseDocument(documentId: string): void {
           <div><span>工具调用</span><strong>{{ toolCallCount }}</strong></div>
         </section>
         <AiopsReportPanel
+          :can-retry="canRetryActive"
           :has-task="aiops.activeTask !== null"
           :is-running="isEffectivelyRunning"
           :report="activeReport"
+          :retrying="aiops.isRunning"
           :task-failed="aiops.activeTask?.status === 'failed'"
+          @retry="run(aiops.retryActive)"
         />
         <AiopsTimeline :events="aiops.liveEvents" :is-running="isEffectivelyRunning" />
       </main>

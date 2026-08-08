@@ -84,6 +84,22 @@ def test_offline_cli_uses_gate_exit_codes(tmp_path: Path) -> None:
     assert run_cli([str(invalid_fixture), "--output", str(report)]) == 2
 
 
+def test_p3_recovery_fixture_is_secretless_deterministic_and_passes(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    fixture = repository_root / "evals" / "fixtures" / "p3-tool-recovery-pass.json"
+    report_a = tmp_path / "p3-report-a.json"
+    report_b = tmp_path / "p3-report-b.json"
+
+    raw_fixture = fixture.read_text(encoding="utf-8")
+    assert "api_key" not in raw_fixture.casefold()
+    assert "authorization" not in raw_fixture.casefold()
+    assert "password" not in raw_fixture.casefold()
+    assert '"secret"' not in raw_fixture.casefold()
+    assert run_cli([str(fixture), "--output", str(report_a)]) == 0
+    assert run_cli([str(fixture), "--output", str(report_b)]) == 0
+    assert report_a.read_text(encoding="utf-8") == report_b.read_text(encoding="utf-8")
+
+
 def test_duration_regression_fails_baseline_gate() -> None:
     result = evaluate_gate(
         EvaluationGate(
@@ -236,6 +252,19 @@ async def test_aiops_trace_resolves_report_evidence_and_tool_spans(
             trace_id="aiops-trace",
             status="succeeded",
         )
+        await trace_repository.create_trace(
+            owner_user_id="aiops-owner",
+            trace_id="aiops-trace-failed",
+            execution_type="aiops",
+            resource_type="diagnostic_task",
+            resource_id="aiops-task",
+        )
+        await trace_repository.finalize_trace(
+            owner_user_id="aiops-owner",
+            trace_id="aiops-trace-failed",
+            status="failed",
+            error_category="McpClientError",
+        )
         service = EvaluationHarnessService(repositories)
         dataset = await service.create_dataset(
             owner_user_id="aiops-owner",
@@ -270,12 +299,20 @@ async def test_aiops_trace_resolves_report_evidence_and_tool_spans(
             candidate_label="P2",
             trace_bindings={case.id: "aiops-trace"},
         )
+        failed_run = await service.run(
+            owner_user_id="aiops-owner",
+            dataset_id=dataset.id,
+            candidate_label="P3 failed attempt",
+            trace_bindings={case.id: "aiops-trace-failed"},
+        )
     finally:
         await engine.dispose()
 
     assert run.gate_status == "passed"
     assert run.pass_rate == 1
     assert run.total_tool_calls == 1
+    assert failed_run.gate_status == "failed"
+    assert failed_run.pass_rate == 0
 
 
 @pytest.mark.asyncio

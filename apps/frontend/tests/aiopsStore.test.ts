@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type {
   AiopsDiagnosticEvidenceChain,
   AiopsDiagnosticSummary,
+  BackgroundJob,
   SseEvent
 } from "@agent-py/api-contracts";
 
@@ -168,7 +169,95 @@ describe("AIOps store", () => {
     expect(store.errorMessage).toBe("服务暂时不可用，请稍后重试。");
     expect(store.liveEvents).toEqual([failed]);
   });
+
+  it("retries a failed background job, resubscribes, and reconciles the same diagnostic", async () => {
+    const sourceJob = backgroundJob({ status: "failed" });
+    const failedTask = task({ status: "failed", backgroundJob: sourceJob });
+    const retryJob = backgroundJob({
+      id: "job_retry",
+      status: "queued",
+      retryOfJobId: sourceJob.id
+    });
+    const retriedIds: string[] = [];
+    let evidenceLoads = 0;
+    const base = fakeClient();
+    setAiopsClientFactoryForTests(() => ({
+      ...base,
+      getEvidenceChain: async () => {
+        evidenceLoads += 1;
+        return evidenceLoads === 1 ? { ...chain(), task: failedTask } : chain();
+      },
+      listDiagnostics: async () => ({ items: [failedTask] }),
+      retryBackgroundJob: async (jobId) => {
+        retriedIds.push(jobId);
+        return retryJob;
+      }
+    }));
+    setActivePinia(createPinia());
+    const store = useAiopsStore();
+
+    await store.initialize();
+    await store.selectDiagnostic(failedTask.id);
+    await store.retryActive();
+
+    expect(retriedIds).toEqual([sourceJob.id]);
+    expect(store.activeDiagnosticId).toBe(failedTask.id);
+    expect(store.liveEvents.map((event) => event.type)).toEqual(events.map((event) => event.type));
+    expect(store.activeTask?.status).toBe("succeeded");
+    expect(store.isRunning).toBe(false);
+  });
+
+  it("keeps failed evidence and reports a rejected retry", async () => {
+    const failedTask = task({
+      status: "failed",
+      backgroundJob: backgroundJob({ status: "failed" })
+    });
+    const base = fakeClient();
+    setAiopsClientFactoryForTests(() => ({
+      ...base,
+      getEvidenceChain: async () => ({ ...chain(), task: failedTask }),
+      listDiagnostics: async () => ({ items: [failedTask] }),
+      retryBackgroundJob: async () => {
+        throw new Error("retry rejected");
+      }
+    }));
+    setActivePinia(createPinia());
+    const store = useAiopsStore();
+
+    await store.initialize();
+    await store.selectDiagnostic(failedTask.id);
+    await store.retryActive();
+
+    expect(store.activeTask?.status).toBe("failed");
+    expect(store.evidenceChain?.task.status).toBe("failed");
+    expect(store.liveEvents).toEqual([]);
+    expect(store.errorMessage).not.toBeNull();
+    expect(store.isRunning).toBe(false);
+  });
 });
+
+function backgroundJob(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
+  return {
+    id: "job_source",
+    ownerUserId: "user_1",
+    kind: "aiops_diagnosis",
+    resourceType: "aiops_diagnostic",
+    resourceId: "diagnostic_1",
+    status: "queued",
+    attempt: 1,
+    maxAttempts: 1,
+    timeoutSeconds: 1800,
+    availableAt: "2026-07-10T00:00:00.000Z",
+    cancelRequestedAt: null,
+    retryOfJobId: null,
+    errorMessage: null,
+    createdAt: "2026-07-10T00:00:00.000Z",
+    updatedAt: "2026-07-10T00:00:00.000Z",
+    startedAt: "2026-07-10T00:00:00.000Z",
+    completedAt: "2026-07-10T00:00:02.000Z",
+    ...overrides
+  };
+}
 
 function fakeClient(options: { readonly streamed?: readonly SseEvent[] } = {}): AiopsClient {
   return {

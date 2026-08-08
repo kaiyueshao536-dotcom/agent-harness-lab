@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Final, cast
 from uuid import uuid4
 
@@ -14,7 +15,17 @@ logger = logging.getLogger(__name__)
 
 TRACE_STATUSES: Final = frozenset({"running", "succeeded", "failed"})
 SPAN_KINDS: Final = frozenset(
-    {"agent", "planner", "executor", "replanner", "tool", "retrieval", "model", "report"}
+    {
+        "agent",
+        "planner",
+        "executor",
+        "replanner",
+        "tool",
+        "attempt",
+        "retrieval",
+        "model",
+        "report",
+    }
 )
 _SENSITIVE_KEYS: Final = frozenset(
     {"apikey", "api_key", "authorization", "credential", "password", "secret", "token"}
@@ -33,6 +44,7 @@ class AgentTraceContext:
     enabled: bool = True
     next_sequence: int = 1
     tool_span_ids: dict[str, str] = field(default_factory=lambda: _new_tool_span_ids())
+    finalized_span_ids: set[str] = field(default_factory=lambda: _new_finalized_span_ids())
 
 
 class AgentTraceService:
@@ -93,6 +105,7 @@ class AgentTraceService:
         parent_span_id: str | None = None,
         external_id: str | None = None,
         attributes: JsonDict | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         span_id = f"span_{uuid4().hex}"
         sequence = context.next_sequence
@@ -110,6 +123,7 @@ class AgentTraceService:
                 parent_span_id=parent_span_id,
                 external_id=_safe_text(external_id, limit=160),
                 attributes=sanitize_trace_attributes(attributes or {}),
+                started_at=started_at,
             )
         except Exception as exc:
             self._log_write_failure(context, exc)
@@ -123,7 +137,11 @@ class AgentTraceService:
         status: str,
         summary: str | None = None,
         attributes: JsonDict | None = None,
+        completed_at: datetime | None = None,
     ) -> None:
+        if span_id in context.finalized_span_ids:
+            return
+        context.finalized_span_ids.add(span_id)
         if not context.enabled or self._repository is None:
             return
         try:
@@ -136,6 +154,7 @@ class AgentTraceService:
                 attributes=(
                     sanitize_trace_attributes(attributes) if attributes is not None else None
                 ),
+                completed_at=completed_at,
             )
         except Exception as exc:
             self._log_write_failure(context, exc)
@@ -234,3 +253,7 @@ def _terminal_status(status: str) -> str:
 
 def _new_tool_span_ids() -> dict[str, str]:
     return {}
+
+
+def _new_finalized_span_ids() -> set[str]:
+    return set()
