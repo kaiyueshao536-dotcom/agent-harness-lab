@@ -3,6 +3,7 @@ import { ChevronDown, GitBranch, Wrench } from "lucide-vue-next";
 import { computed } from "vue";
 
 import type {
+  AiopsDiagnosticExecution,
   AiopsDiagnosticEvidenceChain,
   AiopsDiagnosticStep,
   ToolCallAudit
@@ -14,11 +15,52 @@ import UserFeedbackControl from "./UserFeedbackControl.vue";
 const props = defineProps<{ readonly chain: AiopsDiagnosticEvidenceChain | null }>();
 const visiblePhases = new Set(["planner", "executor", "replanner"]);
 
-const executionSteps = computed(() =>
-  [...(props.chain?.steps ?? [])]
-    .filter((step) => visiblePhases.has(step.phase.toLowerCase()))
-    .sort((left, right) => left.sequence - right.sequence)
-);
+interface ExecutionGroup {
+  readonly execution: AiopsDiagnosticExecution;
+  readonly steps: readonly AiopsDiagnosticStep[];
+  readonly tools: readonly ToolCallAudit[];
+}
+
+const executionGroups = computed<readonly ExecutionGroup[]>(() => {
+  const chain = props.chain;
+  if (chain === null) return [];
+  const stepById = new Map(chain.steps.map((step) => [step.id, step]));
+  const toolById = new Map(chain.toolCalls.map((tool) => [tool.id, tool]));
+  const executions = chain.executions.length > 0
+    ? chain.executions
+    : [{
+        ordinal: 1,
+        traceId: null,
+        status: chain.task.status,
+        summary: "兼容历史证据链",
+        startedAt: chain.task.createdAt,
+        completedAt: chain.task.completedAt,
+        durationMs: null,
+        stepIds: chain.steps.map((step) => step.id),
+        toolCallIds: chain.toolCalls.map((tool) => tool.id)
+      } satisfies AiopsDiagnosticExecution];
+  return executions.map((execution) => ({
+    execution,
+    steps: execution.stepIds
+      .map((id) => stepById.get(id))
+      .filter((step): step is AiopsDiagnosticStep => step !== undefined)
+      .filter((step) => visiblePhases.has(step.phase.toLowerCase()))
+      .sort((left, right) => left.sequence - right.sequence),
+    tools: execution.toolCallIds
+      .map((id) => toolById.get(id))
+      .filter((tool): tool is ToolCallAudit => tool !== undefined)
+  }));
+});
+
+const isAccumulated = computed(() => (props.chain?.executions.length ?? 0) > 1);
+
+function executionTitle(execution: AiopsDiagnosticExecution): string {
+  return execution.traceId === null ? "未归属历史记录" : `第 ${execution.ordinal} 次执行`;
+}
+
+function executionDuration(execution: AiopsDiagnosticExecution): string {
+  return execution.durationMs === null ? "耗时未知" : `${execution.durationMs} ms`;
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -167,35 +209,55 @@ function toolOutput(tool: ToolCallAudit): readonly string[] {
 
     <p v-if="chain === null" class="aiops-execution__empty">选择一项诊断，查看持久化执行过程和工具调用。</p>
     <template v-else>
-      <ol v-if="executionSteps.length" class="aiops-execution__steps">
-        <li v-for="step in executionSteps" :key="step.id">
-          <span class="aiops-execution__index">{{ step.sequence }}</span>
-          <div>
-            <strong>{{ stepTitle(step) }}</strong>
-            <div class="aiops-execution__output">
-              <p v-for="line in stepOutput(step)" :key="line">{{ line }}</p>
+      <p v-if="isAccumulated" class="aiops-execution__summary">
+        跨 {{ chain.executions.length }} 次执行累计 {{ chain.toolCalls.length }} 次工具调用；下方按单次 Trace 展示。
+      </p>
+      <div v-if="executionGroups.length" class="aiops-execution__groups">
+        <article v-for="group in executionGroups" :key="group.execution.traceId ?? 'unassigned'" class="aiops-execution__group">
+          <header>
+            <div>
+              <strong>{{ executionTitle(group.execution) }}</strong>
+              <code v-if="group.execution.traceId">{{ group.execution.traceId }}</code>
             </div>
-            <UserFeedbackControl target-type="diagnostic_step" :target-id="step.id" compact />
-          </div>
-        </li>
-      </ol>
-      <p v-else class="aiops-execution__empty">该任务还没有可展示的执行步骤。</p>
+            <div class="aiops-execution__meta">
+              <AsyncStatusBadge :status="group.execution.status" compact />
+              <span>{{ executionDuration(group.execution) }}</span>
+              <span>{{ group.tools.length }} 次工具调用</span>
+            </div>
+          </header>
 
-      <section class="aiops-execution__tools" aria-label="工具调用">
-        <header><h4><Wrench :size="15" aria-hidden="true" />工具调用</h4><span>{{ chain.toolCalls.length }}</span></header>
-        <div v-if="chain.toolCalls.length" class="aiops-execution__tool-list">
-          <details v-for="tool in chain.toolCalls" :key="tool.id">
-            <summary>
-              <span><strong>{{ tool.toolName }}</strong><AsyncStatusBadge :status="tool.status" compact /></span>
-              <ChevronDown :size="15" aria-hidden="true" />
-            </summary>
-            <div class="aiops-execution__tool-output">
-              <p v-for="line in toolOutput(tool)" :key="line">{{ line }}</p>
+          <ol v-if="group.steps.length" class="aiops-execution__steps">
+            <li v-for="step in group.steps" :key="step.id">
+              <span class="aiops-execution__index">{{ step.sequence }}</span>
+              <div>
+                <strong>{{ stepTitle(step) }}</strong>
+                <div class="aiops-execution__output">
+                  <p v-for="line in stepOutput(step)" :key="line">{{ line }}</p>
+                </div>
+                <UserFeedbackControl target-type="diagnostic_step" :target-id="step.id" compact />
+              </div>
+            </li>
+          </ol>
+          <p v-else class="aiops-execution__empty">本次执行没有可展示的 Planner / Executor / Replanner 步骤。</p>
+
+          <section class="aiops-execution__tools" aria-label="工具调用">
+            <header><h4><Wrench :size="15" aria-hidden="true" />本次工具调用</h4><span>{{ group.tools.length }}</span></header>
+            <div v-if="group.tools.length" class="aiops-execution__tool-list">
+              <details v-for="tool in group.tools" :key="tool.id">
+                <summary>
+                  <span><strong>{{ tool.toolName }}</strong><AsyncStatusBadge :status="tool.status" compact /></span>
+                  <ChevronDown :size="15" aria-hidden="true" />
+                </summary>
+                <div class="aiops-execution__tool-output">
+                  <p v-for="line in toolOutput(tool)" :key="line">{{ line }}</p>
+                </div>
+              </details>
             </div>
-          </details>
-        </div>
-        <p v-else class="aiops-execution__empty">该任务没有工具调用。</p>
-      </section>
+            <p v-else class="aiops-execution__empty">本次执行没有工具调用。</p>
+          </section>
+        </article>
+      </div>
+      <p v-else class="aiops-execution__empty">该任务还没有可展示的执行记录。</p>
     </template>
   </section>
 </template>
@@ -206,6 +268,14 @@ function toolOutput(tool: ToolCallAudit): readonly string[] {
 .aiops-execution > header p { color: var(--text-tertiary); font-size: 0.7rem; font-weight: 700; margin: 0 0 0.3rem; }
 h3 { font-size: 0.95rem; font-weight: 680; margin: 0; }
 .aiops-execution__empty { color: var(--text-tertiary); font-size: 0.78rem; line-height: 1.5; margin: 0.85rem 0 0; }
+.aiops-execution__summary { background: var(--surface-inset); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.74rem; line-height: 1.55; margin: 1rem 0 0; padding: 0.65rem 0.75rem; }
+.aiops-execution__groups { display: grid; gap: 0.75rem; margin-top: 0.85rem; }
+.aiops-execution__group { border: 1px solid var(--line); border-radius: var(--radius-md); min-width: 0; padding: 0.85rem; }
+.aiops-execution__group > header { align-items: flex-start; display: flex; gap: 0.75rem; justify-content: space-between; }
+.aiops-execution__group > header strong { display: block; font-size: 0.82rem; }
+.aiops-execution__group > header code { color: var(--text-tertiary); display: block; font-size: 0.66rem; margin-top: 0.25rem; overflow-wrap: anywhere; }
+.aiops-execution__meta { align-items: flex-end; display: flex; flex: 0 0 auto; flex-direction: column; gap: 0.2rem; }
+.aiops-execution__meta > span { color: var(--text-tertiary); font-size: 0.66rem; }
 .aiops-execution__steps { display: grid; gap: 0; list-style: none; margin: 1rem 0 0; padding: 0; }
 .aiops-execution__steps li { display: grid; gap: 0.65rem; grid-template-columns: 1.65rem minmax(0, 1fr); padding-bottom: 1rem; position: relative; }
 .aiops-execution__steps li:not(:last-child)::after { background: var(--line-strong); content: ""; height: calc(100% - 1.75rem); left: 0.8rem; position: absolute; top: 1.7rem; width: 1px; }
@@ -213,7 +283,7 @@ h3 { font-size: 0.95rem; font-weight: 680; margin: 0; }
 .aiops-execution__steps strong { display: block; font-size: 0.8rem; line-height: 1.45; overflow-wrap: anywhere; padding-top: 0.18rem; }
 .aiops-execution__output, .aiops-execution__tool-output { border-left: 2px solid var(--line-strong); color: var(--text-secondary); margin-top: 0.5rem; padding: 0.05rem 0 0.05rem 0.7rem; }
 .aiops-execution__output p, .aiops-execution__tool-output p { font-size: 0.72rem; line-height: 1.55; margin: 0.22rem 0; overflow-wrap: anywhere; word-break: break-word; }
-.aiops-execution__tools { border-top: 1px solid var(--line); margin-top: 0.15rem; padding-top: 1rem; }
+.aiops-execution__tools { border-top: 1px solid var(--line); margin-top: 0.15rem; padding-top: 0.75rem; }
 .aiops-execution__tools > header { align-items: center; display: flex; justify-content: space-between; }
 .aiops-execution__tools h4 { align-items: center; color: var(--text-secondary); display: flex; font-size: 0.8rem; gap: 0.35rem; margin: 0; }
 .aiops-execution__tools > header > span { color: var(--text-tertiary); font-size: 0.72rem; }
@@ -225,5 +295,5 @@ h3 { font-size: 0.95rem; font-weight: 680; margin: 0; }
 .aiops-execution__tool-list summary strong { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aiops-execution__tool-list summary > svg { color: var(--text-tertiary); flex: 0 0 auto; transition: transform var(--transition-fast); }
 .aiops-execution__tool-list details[open] summary > svg { transform: rotate(180deg); }
-@media (max-width: 560px) { .aiops-execution { padding: 1rem; } }
+@media (max-width: 560px) { .aiops-execution { padding: 1rem; } .aiops-execution__group > header { flex-direction: column; } .aiops-execution__meta { align-items: flex-start; } }
 </style>

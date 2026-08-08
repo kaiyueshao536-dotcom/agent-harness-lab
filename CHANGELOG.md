@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P3.2 | 2026-08-09 | 恢复执行与报告证据边界闭环 | 以不可变 Tag 指向为准 | [`p3.2-recovery-evidence-quality`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.2-recovery-evidence-quality) | [P3.2 复盘](docs/version-history/p3.2-recovery-evidence-quality.md) |
 | P3.1 | 2026-08-08 | 手工验收缺口闭环 | 以不可变 Tag 指向为准 | [`p3.1-manual-acceptance-gap-closure`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.1-manual-acceptance-gap-closure) | [P3.1 复盘](docs/version-history/p3.1-manual-acceptance-gap-closure.md) |
 | P3 | 2026-08-08 | Trace 驱动的外部工具失败恢复闭环 | 以不可变 Tag 指向为准 | [`p3-trace-driven-tool-failure-recovery`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3-trace-driven-tool-failure-recovery) | [P3 复盘](docs/version-history/p3-trace-driven-tool-failure-recovery.md) |
 | P2 | 2026-08-08 | 自动评测 Harness | [`f58cf18`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/f58cf18d815f66977ab3de7a2e62aca61733e128) | [`p2-agent-evaluation-harness`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p2-agent-evaluation-harness) | [P2 复盘](docs/version-history/p2-agent-evaluation-harness.md) |
@@ -26,6 +27,14 @@
 - 统一公开报告序列化边界，历史内容在返回浏览器前脱敏内部 URL、Topic ID 和密钥模式。
 - 禁用的告警源不再阻断已启用的本地 Alertmanager；空告警返回正常空状态。
 - 真实重试保留旧失败 Job/Trace，并创建关联的成功 Job 与成功 Trace。
+
+## P3.2 恢复证据质量闭环
+
+- 将同一诊断任务的累计步骤和工具调用按独立 Trace 分组，明确“跨 N 次执行累计”和单次执行指标。
+- 历史案例正文只供 Planner 参考，不再进入 Report 的当前事实输入。
+- 工具失败或 SearchLog 零结果使用确定性谨慎报告，不把无匹配日志直接推断为 Topic 无数据或采集链路异常。
+- 修复 Topic ID 脱敏占位符的重复右括号，并新增 `evidence_cautious` 离线确定性评测规则。
+- 用真实的两次失败、一次恢复 Trace 和 P2 Gate 完成手工复测；详细数据见 P3.2 复盘。
 
 ## 维护规则
 

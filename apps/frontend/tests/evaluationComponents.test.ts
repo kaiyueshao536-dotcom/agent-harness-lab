@@ -41,6 +41,8 @@ describe("Evaluation workspace", () => {
     expect(wrapper.text()).toContain("查看 Trace trace-1");
     expect(wrapper.findAll("select").length).toBeGreaterThan(1);
     expect(wrapper.find('option[value="trace-failed"]').exists()).toBe(true);
+    await wrapper.get(".evaluation-view__catalog header button").trigger("click");
+    expect(wrapper.find('option[value="evidence_cautious"]').exists()).toBe(true);
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("status=");
   });
   it("stages multiple rules before saving one evaluation case", async () => {

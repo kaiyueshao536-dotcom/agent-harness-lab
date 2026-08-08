@@ -855,6 +855,10 @@ class AiopsDiagnosticService:
             evidence=cast(list[JsonDict], state.get("evidence") or []),
             execution_failed=bool(state.get("execution_failed")),
         )
+        if bool(state.get("execution_failed")) or _has_only_zero_search_log_results(
+            state.get("evidence")
+        ):
+            return fallback, "fallback"
         prompt = _report_prompt(state)
         try:
             response = await self._llm_provider.create_chat_model().ainvoke(prompt)
@@ -1207,7 +1211,6 @@ def _report_prompt(state: AiopsDiagnosticState) -> str:
         "diagnosticQuery": str(state.get("query") or ""),
         "alert": _json_dict(state.get("alert")),
         "noSopMatched": bool(state.get("no_sop_matched")),
-        "sopEvidence": _report_sop_context(state.get("sop_hits")),
         "plan": _report_plan_context(state.get("plan")),
         "executionFailed": bool(state.get("execution_failed")),
         "executionEvidence": _report_evidence_context(state.get("evidence")),
@@ -1218,7 +1221,17 @@ def _report_prompt(state: AiopsDiagnosticState) -> str:
         separators=(",", ":"),
         default=str,
     )[:12_000]
-    return f"""你是一个严谨的 AIOps 诊断报告生成器。请只根据下方“诊断事实”生成最终报告。
+    evidence_boundary = """Evidence boundary (mandatory):
+- Only diagnosticQuery, alert, and executionEvidence are current-run facts.
+- The plan is an intended action, not proof that an incident symptom or root cause exists.
+- Historical cases and SOP text are planning references and are intentionally absent here.
+- Never introduce a symptom, log fact, or root cause that is absent from current-run facts.
+- A zero-record search means only that this query matched no parseable logs; it does not prove
+  that the Topic has no data or that the collection pipeline is broken.
+
+"""
+    return evidence_boundary + f"""\
+你是一个严谨的 AIOps 诊断报告生成器。请只根据下方“诊断事实”生成最终报告。
 
 输出要求：
 - 最终输出必须是纯 Markdown 文本，不要输出 JSON，不要使用包裹全文的 Markdown 代码围栏。
@@ -1457,7 +1470,14 @@ def _tool_result_summary(tool_name: str, output: object) -> str:
     records = _search_log_records(output)
     if not records:
         return json.dumps(
-            {"recordCount": 0, "records": [], "message": "CLS 未返回可解析日志。"},
+            {
+                "recordCount": 0,
+                "records": [],
+                "message": (
+                    "当前查询未匹配到可解析日志；尚不能判断 Topic 数据、查询条件、"
+                    "时间窗口或采集链路状态。"
+                ),
+            },
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -1526,17 +1546,8 @@ def _search_log_detail_lines(records: Sequence[object]) -> list[str]:
         ]
         if fields:
             lines.append("  - " + "; ".join(fields))
-    return lines or ["  - CLS 未返回可解析日志。"]
-
-
-def _report_sop_context(value: object) -> list[JsonDict]:
-    return [
-        {
-            "source": str(hit.get("source") or "未获取"),
-            "score": hit.get("score"),
-            "content": str(hit.get("content") or "")[:1_200],
-        }
-        for hit in _json_list(value)[:3]
+    return lines or [
+        "  - 当前查询未匹配到可解析日志；尚不能判断 Topic 数据、查询条件、时间窗口或采集链路状态。"
     ]
 
 
@@ -1549,6 +1560,28 @@ def _report_evidence_context(value: object) -> list[JsonDict]:
         }
         for item in _json_list(value)
     ]
+
+
+def _has_only_zero_search_log_results(value: object) -> bool:
+    search_results = [
+        item
+        for item in _json_list(value)
+        if str(item.get("tool") or "") == "SearchLog"
+        and str(item.get("status") or "") == "completed"
+    ]
+    if not search_results:
+        return False
+    for item in search_results:
+        summary = item.get("summary")
+        if not isinstance(summary, str):
+            return False
+        try:
+            payload = json.loads(summary)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(payload, Mapping) or payload.get("recordCount") != 0:
+            return False
+    return True
 
 
 def _report_plan_context(value: object) -> list[JsonDict]:
@@ -1601,6 +1634,11 @@ def redact_diagnostic_public_text(content: str) -> str:
     redacted = re.sub(
         r"(?i)(topic\s*id|topicid|topic_id)(\s*[:=：]\s*)[^\s,，;；)）\]】]+",
         r"\1\2[内部资源标识已隐藏]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(\[内部资源标识已隐藏\])(?:\]|】)+",
+        r"\1",
         redacted,
     )
     return re.sub(

@@ -131,10 +131,23 @@ export interface AiopsDiagnosticEvidenceChain {
   readonly task: AiopsDiagnosticSummary;
   readonly steps: readonly AiopsDiagnosticStep[];
   readonly toolCalls: readonly ToolCallAudit[];
+  readonly executions: readonly AiopsDiagnosticExecution[];
   readonly evidence: readonly AiopsDiagnosticEvidence[];
   readonly reports: readonly AiopsDiagnosticReport[];
   readonly reportEvidenceLinks: readonly AiopsReportEvidenceLink[];
   readonly checkpoints: readonly AiopsGraphCheckpoint[];
+}
+
+export interface AiopsDiagnosticExecution {
+  readonly ordinal: number;
+  readonly traceId: string | null;
+  readonly status: string;
+  readonly summary: string | null;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+  readonly durationMs: number | null;
+  readonly stepIds: readonly string[];
+  readonly toolCallIds: readonly string[];
 }
 
 export interface SaveAiopsDiagnosticCaseResponse {

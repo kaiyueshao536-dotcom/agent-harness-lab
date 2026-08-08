@@ -51,6 +51,11 @@ describe("AIOps components", () => {
         resultSummary: JSON.stringify({ recordCount: 20, records: [{ timestamp: "2026-07-10 08:00:00", level: "ERROR", service: "checkout", event: "timeout", message: "request timeout", latency_ms: 2450 }] }),
         errorMessage: null, startedAt: "2026-07-10T00:00:01.000Z", completedAt: "2026-07-10T00:00:02.000Z", durationMs: 1000, createdAt: "2026-07-10T00:00:01.000Z"
       }],
+      executions: [{
+        ordinal: 1, traceId: "trace_1", status: "succeeded", summary: "completed",
+        startedAt: "2026-07-10T00:00:00.000Z", completedAt: "2026-07-10T00:00:02.000Z", durationMs: 2000,
+        stepIds: ["step_1", "step_2", "step_3"], toolCallIds: ["tool_1"]
+      }],
       evidence: [{ id: "evidence_1", taskId: "diagnostic_1", stepId: "step_2", toolCallId: "tool_1", kind: "log", source: "SearchLog", summary: "RAW_EVIDENCE_MARKER", payload: { raw: "RAW_PAYLOAD_MARKER" }, createdAt: "2026-07-10T00:00:01.000Z" }],
       reports: [{ id: "report_1", title: "Diagnostic report", content: "Persisted report body.", payload: {}, evidenceIds: ["evidence_1"], createdAt: "2026-07-10T00:00:02.000Z" }],
       reportEvidenceLinks: [{ id: "link_1", taskId: "diagnostic_1", reportId: "report_1", evidenceId: "evidence_1", createdAt: "2026-07-10T00:00:02.000Z" }],
@@ -76,6 +81,56 @@ describe("AIOps components", () => {
     expect(execution.text()).not.toContain("RAW_PAYLOAD_MARKER");
     expect(execution.text()).not.toContain("evidence_1");
     expect(execution.text()).not.toContain("Persisted report body");
+  });
+
+  it("separates accumulated retry history into per-trace executions", () => {
+    const toolCalls = Array.from({ length: 6 }, (_, index) => ({
+      id: `tool_${index + 1}`,
+      ownerUserId: "user_1",
+      sessionId: null,
+      diagnosticTaskId: "diagnostic_1",
+      toolName: index % 2 === 0 ? "knowledge_retrieval" : "SearchLog",
+      status: index < 4 ? "failed" as const : "completed" as const,
+      arguments: {},
+      resultSummary: null,
+      errorMessage: index < 4 ? "safe failure" : null,
+      startedAt: `2026-08-08T23:${40 + index}:00.000Z`,
+      completedAt: `2026-08-08T23:${40 + index}:01.000Z`,
+      durationMs: 1000,
+      createdAt: `2026-08-08T23:${40 + index}:00.000Z`
+    }));
+    const chain: AiopsDiagnosticEvidenceChain = {
+      task: diagnostic(),
+      steps: [],
+      toolCalls,
+      executions: [1, 2, 3].map((ordinal) => ({
+        ordinal,
+        traceId: `trace_${ordinal}`,
+        status: ordinal < 3 ? "failed" : "succeeded",
+        summary: ordinal < 3 ? "failed" : "recovered",
+        startedAt: `2026-08-08T23:${40 + ordinal}:00.000Z`,
+        completedAt: `2026-08-08T23:${40 + ordinal}:30.000Z`,
+        durationMs: 80000 + ordinal,
+        stepIds: [],
+        toolCallIds: [`tool_${ordinal * 2 - 1}`, `tool_${ordinal * 2}`]
+      })),
+      evidence: [],
+      reports: [],
+      reportEvidenceLinks: [],
+      checkpoints: []
+    };
+
+    const wrapper = mount(AiopsEvidenceChain, { props: { chain } });
+
+    expect(wrapper.text()).toContain("跨 3 次执行累计 6 次工具调用");
+    expect(wrapper.text()).toContain("第 1 次执行");
+    expect(wrapper.text()).toContain("第 2 次执行");
+    expect(wrapper.text()).toContain("第 3 次执行");
+    expect(wrapper.text()).toContain("trace_3");
+    expect(wrapper.findAll(".aiops-execution__group")).toHaveLength(3);
+    expect(
+      wrapper.findAll(".aiops-execution__meta").every((item) => item.text().includes("2 次工具调用"))
+    ).toBe(true);
   });
 
   it("renders a persisted Markdown report as the center reading surface", () => {

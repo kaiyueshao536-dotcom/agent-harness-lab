@@ -62,7 +62,7 @@ function fakeClient(created: CreateCall[]): AiopsClient {
   const task: AiopsDiagnosticSummary = {
     id: "diagnostic_1", ownerUserId: "user_1", status: "accepted", query: "Investigate alert", inputPayload: {}, resultPayload: {}, createdAt: "2026-07-10T08:00:00Z", updatedAt: "2026-07-10T08:00:00Z", completedAt: null, reports: []
   };
-  const chain: AiopsDiagnosticEvidenceChain = { task, steps: [], toolCalls: [], evidence: [], reports: [], reportEvidenceLinks: [], checkpoints: [] };
+  const chain: AiopsDiagnosticEvidenceChain = { task, steps: [], toolCalls: [], executions: [], evidence: [], reports: [], reportEvidenceLinks: [], checkpoints: [] };
   return {
     createDiagnostic: async (request) => { created.push(request); return task; },
     getEvidenceChain: async () => chain,

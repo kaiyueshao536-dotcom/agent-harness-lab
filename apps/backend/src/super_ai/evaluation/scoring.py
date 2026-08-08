@@ -19,6 +19,21 @@ _NAMED_SECRET_PATTERN = re.compile(
     r"(?i)\b(api[-_ ]?key|authorization|credential|password|secret|token)"
     r"\s*[:=]\s*[^\s,;]+"
 )
+_ZERO_RESULT_PATTERNS = (
+    re.compile(r"recordcount\s*(?:为|=|:|：)?\s*0", re.IGNORECASE),
+    re.compile(r"(?:未返回|未匹配到|没有匹配到).{0,12}(?:可解析)?日志"),
+    re.compile(r"no matching (?:parseable )?(?:records|logs)", re.IGNORECASE),
+)
+_CAUTIOUS_PATTERNS = (
+    re.compile(r"证据不足"),
+    re.compile(r"无法确认(?:原因|根因)?"),
+    re.compile(r"cannot confirm", re.IGNORECASE),
+)
+_OVERCLAIM_PATTERNS = (
+    re.compile(r"(?:表明|证明|说明).{0,18}(?:采集链路|日志链路).{0,8}(?:异常|故障)"),
+    re.compile(r"(?:表明|证明|说明).{0,18}(?:topic|主题).{0,8}(?:无数据|没有数据)", re.IGNORECASE),
+    re.compile(r"(?:采集链路|日志链路)(?:存在|发生|出现)?(?:异常|故障)"),
+)
 
 
 def score_case(
@@ -106,6 +121,23 @@ def _evaluate_rule(rule: EvaluationRule, observation: EvaluationObservation) -> 
         threshold = _threshold(rule)
         count = len(observation.tool_names)
         return _check(rule, count <= threshold, f"<={threshold}", str(count))
+    if rule.kind == "evidence_cautious":
+        zero_result = any(
+            pattern.search(observation.output_text) for pattern in _ZERO_RESULT_PATTERNS
+        )
+        cautious = any(pattern.search(observation.output_text) for pattern in _CAUTIOUS_PATTERNS)
+        overclaims = [
+            match.group(0)
+            for pattern in _OVERCLAIM_PATTERNS
+            if (match := pattern.search(observation.output_text)) is not None
+        ]
+        passed = not zero_result or (cautious and not overclaims)
+        return _check(
+            rule,
+            passed,
+            "zero-result reports state uncertainty and avoid causal claims",
+            f"zeroResult={zero_result}; cautious={cautious}; overclaims={overclaims}",
+        )
     return _check(
         rule,
         observation.trace_status == "succeeded",

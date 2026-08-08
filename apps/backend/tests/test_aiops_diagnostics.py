@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -181,8 +181,14 @@ class FakeLlmProvider:
 
 
 class FakeMcpClient:
-    def __init__(self, *, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        output: list[dict[str, object]] | None = None,
+    ) -> None:
         self.error = error
+        self.output = output
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     async def discover_tools(self) -> list[McpToolDefinition]:
@@ -212,6 +218,8 @@ class FakeMcpClient:
             raise self.error
         if attempt_observer is not None:
             await attempt_observer(McpAttemptEvent(1, 1, "cls", "succeeded"))
+        if self.output is not None:
+            return self.output
         return [
             {
                 "type": "text",
@@ -350,6 +358,8 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
     assert "## 🛠️ 处理方案执行1" in report_prompt
     assert "## 📊 结论" in report_prompt
     assert '"severity":"critical"' in report_prompt
+    assert "Check CPU saturation and query worker logs before mitigation." not in report_prompt
+    assert '"sopEvidence"' not in report_prompt
     report_evidence = cast(list[dict[str, object]], reports[0].payload["evidence"])
     assert report_evidence[0]["tool"] == "SearchLog"
     assert "cpu_pressure" in str(report_evidence[0]["summary"])
@@ -638,7 +648,7 @@ async def test_evidence_chain_redacts_legacy_report_connection_details(
             title="Legacy report",
             content=(
                 f"SearchLog failed at {internal_url}. "
-                f"TopicId: {internal_topic}."
+                f"TopicId: {internal_topic}]"
             ),
             payload={
                 "evidence": [
@@ -661,6 +671,177 @@ async def test_evidence_chain_redacts_legacy_report_connection_details(
     assert internal_topic not in public_report
     assert "[内部地址已隐藏]" in public_report
     assert "[内部资源标识已隐藏]" in public_report
+    assert "]]" not in public_report
+
+
+@pytest.mark.asyncio
+async def test_zero_log_report_uses_current_evidence_and_stays_cautious(
+    migrated_database_url: str,
+) -> None:
+    engine = create_memory_engine(migrated_database_url)
+    try:
+        repositories = create_sqlite_memory_repositories(create_memory_session_factory(engine))
+        task = await repositories.diagnostics.create_task(
+            owner_user_id="user-zero",
+            task_id="diagnostic-zero-logs",
+            status="accepted",
+            query="验证 learning-demo 的 CLS Topic 是否可以查询",
+            input_payload={"alert": {"service": "learning-demo", "severity": "info"}},
+        )
+        historical_hit = replace(
+            _sop_hit("user-zero"),
+            content="历史案例：结算服务 API 延迟升高，采集链路存在异常。",
+            source="historical-settlement-case.md",
+        )
+        provider = FakeLlmProvider(
+            report_response=REPORT_MARKDOWN.replace("WorkerCpuHigh", "结算服务 API 延迟升高")
+        )
+        service = AiopsDiagnosticService(
+            repositories=repositories,
+            llm_provider=cast(LlmProvider, provider),
+            retrieval_tool=KnowledgeRetrievalTool(
+                embedding_model=FakeEmbeddingModel(),
+                vector_store=FakeVectorStore([historical_hit]),
+                rerank_model=FakeRerankModel(),
+            ),
+            mcp_client=cast(LocalMcpClient, FakeMcpClient(output=[])),
+            cls_region="ap-guangzhou",
+            cls_topic_id="topic-zero",
+        )
+
+        _ = [
+            event
+            async for event in service.stream(
+                task=task,
+                accessible_knowledge_base_ids=("kb_user-zero",),
+            )
+        ]
+        reports = await repositories.diagnostics.list_reports(
+            owner_user_id="user-zero",
+            task_id=task.id,
+        )
+    finally:
+        await engine.dispose()
+
+    assert reports[0].payload["reportGeneration"] == "fallback"
+    assert "当前查询未匹配到可解析日志" in reports[0].content
+    assert "尚不能判断 Topic 数据、查询条件、时间窗口或采集链路状态" in reports[0].content
+    assert "证据不足，无法确认根因" in reports[0].content
+    assert "结算服务 API 延迟升高" not in reports[0].content
+    assert "采集链路存在异常" not in reports[0].content
+    assert not any(
+        "AIOps 诊断报告生成器" in str(item) for item in provider.chat_model.inputs
+    )
+
+
+@pytest.mark.asyncio
+async def test_evidence_chain_groups_task_history_by_agent_trace(
+    migrated_database_url: str,
+) -> None:
+    app = create_app(database_url=migrated_database_url)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        owner = await _register(client, "execution-groups@example.com")
+        owner_id = owner["user"]["id"]
+        task = await app.state.memory_repositories.diagnostics.create_task(
+            owner_user_id=owner_id,
+            task_id="diagnostic-execution-groups",
+            status="succeeded",
+            query="Inspect grouped retries",
+        )
+        traces = app.state.memory_repositories.agent_traces
+        audits = app.state.memory_repositories.tool_call_audits
+        assert traces is not None and audits is not None
+        base = datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc)
+        first = await traces.create_trace(
+            owner_user_id=owner_id,
+            trace_id="trace-first-failed",
+            execution_type="aiops",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+            started_at=base,
+        )
+        await traces.finalize_trace(
+            owner_user_id=owner_id,
+            trace_id=first.id,
+            status="failed",
+            completed_at=base + timedelta(seconds=30),
+        )
+        second = await traces.create_trace(
+            owner_user_id=owner_id,
+            trace_id="trace-second-succeeded",
+            execution_type="aiops",
+            resource_type="diagnostic_task",
+            resource_id=task.id,
+            started_at=base + timedelta(minutes=1),
+        )
+        await traces.finalize_trace(
+            owner_user_id=owner_id,
+            trace_id=second.id,
+            status="succeeded",
+            completed_at=base + timedelta(minutes=1, seconds=30),
+        )
+        await app.state.memory_repositories.diagnostics.create_step(
+            owner_user_id=owner_id,
+            step_id="step-unassigned",
+            task_id=task.id,
+            sequence=1,
+            phase="planner",
+            status="completed",
+            created_at=base - timedelta(seconds=1),
+        )
+        for sequence, (step_id, created_at) in enumerate(
+            [
+                ("step-first", base + timedelta(seconds=1)),
+                ("step-second", base + timedelta(minutes=1, seconds=1)),
+            ],
+            start=2,
+        ):
+            await app.state.memory_repositories.diagnostics.create_step(
+                owner_user_id=owner_id,
+                step_id=step_id,
+                task_id=task.id,
+                sequence=sequence,
+                phase="executor",
+                status="completed",
+                created_at=created_at,
+            )
+        for audit_id, started_at in [
+            ("audit-first", base + timedelta(seconds=2)),
+            ("audit-second", base + timedelta(minutes=1, seconds=2)),
+        ]:
+            await audits.create_for_diagnostic_task(
+                owner_user_id=owner_id,
+                audit_id=audit_id,
+                diagnostic_task_id=task.id,
+                tool_name="SearchLog",
+                started_at=started_at,
+            )
+            await audits.finalize(
+                owner_user_id=owner_id,
+                audit_id=audit_id,
+                status="completed",
+                completed_at=started_at + timedelta(milliseconds=10),
+            )
+
+        response = await client.get(
+            f"/aiops/diagnostics/{task.id}/evidence-chain",
+            headers=_auth_headers(owner["accessToken"]),
+        )
+
+    assert response.status_code == 200
+    executions = response.json()["data"]["executions"]
+    assert [item["traceId"] for item in executions] == [
+        "trace-first-failed",
+        "trace-second-succeeded",
+        None,
+    ]
+    assert executions[0]["stepIds"] == ["step-first"]
+    assert executions[0]["toolCallIds"] == ["audit-first"]
+    assert executions[1]["stepIds"] == ["step-second"]
+    assert executions[1]["toolCallIds"] == ["audit-second"]
+    assert executions[2]["stepIds"] == ["step-unassigned"]
+    assert executions[2]["summary"] == "历史记录无法归属已有 Trace"
 
 
 @pytest.mark.asyncio

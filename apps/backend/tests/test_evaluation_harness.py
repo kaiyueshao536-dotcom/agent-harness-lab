@@ -65,6 +65,37 @@ def test_scoring_is_deterministic_explainable_and_limits_output_summary() -> Non
     assert "safe safe safe" not in str(first.checks)
 
 
+def test_evidence_cautious_rule_rejects_zero_result_overclaim() -> None:
+    rule = EvaluationRule(kind="evidence_cautious")
+    cautious = EvaluationObservation(
+        trace_id="trace-cautious",
+        execution_type="aiops",
+        output_text=(
+            "SearchLog 当前查询未匹配到可解析日志；证据不足，无法确认原因。"
+        ),
+        tool_names=["SearchLog"],
+        duration_ms=100,
+        trace_status="succeeded",
+    )
+    overclaim = cautious.model_copy(
+        update={
+            "trace_id": "trace-overclaim",
+            "output_text": (
+                "SearchLog recordCount 为 0，这表明日志采集链路存在异常。"
+            ),
+        }
+    )
+
+    passed = score_case([rule], cautious)
+    failed = score_case([rule], overclaim)
+
+    assert passed.passed is True
+    assert failed.passed is False
+    assert failed.checks[0].kind == "evidence_cautious"
+    assert "overclaims=[" in failed.checks[0].actual
+    assert "采集链路存在异常" in failed.checks[0].actual
+
+
 def test_offline_cli_uses_gate_exit_codes(tmp_path: Path) -> None:
     repository_root = Path(__file__).resolve().parents[3]
     pass_fixture = repository_root / "evals" / "fixtures" / "p2-smoke-pass.json"
@@ -98,6 +129,17 @@ def test_p3_recovery_fixture_is_secretless_deterministic_and_passes(tmp_path: Pa
     assert run_cli([str(fixture), "--output", str(report_a)]) == 0
     assert run_cli([str(fixture), "--output", str(report_b)]) == 0
     assert report_a.read_text(encoding="utf-8") == report_b.read_text(encoding="utf-8")
+
+
+def test_p3_report_evidence_fixture_passes_offline_cli(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    fixture = repository_root / "evals" / "fixtures" / "p3-report-evidence-pass.json"
+    report = tmp_path / "p3-report-evidence.json"
+
+    assert run_cli([str(fixture), "--output", str(report)]) == 0
+    payload = report.read_text(encoding="utf-8")
+    assert '"gateStatus": "passed"' in payload
+    assert '"kind": "evidence_cautious"' in payload
 
 
 def test_duration_regression_fails_baseline_gate() -> None:
@@ -281,6 +323,7 @@ async def test_aiops_trace_resolves_report_evidence_and_tool_spans(
                         EvaluationRule(kind="contains_all", values=["root cause"]),
                         EvaluationRule(kind="required_tools", values=["SearchLog"]),
                         EvaluationRule(kind="min_references", threshold=1),
+                        EvaluationRule(kind="evidence_cautious"),
                         EvaluationRule(kind="trace_succeeded"),
                     ],
                 )

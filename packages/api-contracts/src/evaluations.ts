@@ -7,6 +7,7 @@ export type EvaluationRuleKind =
   | "min_references"
   | "max_duration_ms"
   | "max_tool_calls"
+  | "evidence_cautious"
   | "trace_succeeded";
 
 export interface EvaluationRule {

@@ -1068,9 +1068,7 @@ def create_app(
         datasets = await repository.list_datasets(owner_user_id=user.id)
         items: list[dict[str, object]] = []
         for dataset in datasets:
-            cases = await repository.list_cases(
-                owner_user_id=user.id, dataset_id=dataset.id
-            )
+            cases = await repository.list_cases(owner_user_id=user.id, dataset_id=dataset.id)
             items.append(_evaluation_dataset_payload(dataset, cases, include_cases=False))
         return success_response(request, {"items": items})
 
@@ -1114,9 +1112,7 @@ def create_app(
         user: Annotated[UserRecord, Depends(_current_user)],
     ) -> object:
         repository = _evaluation_repository(request)
-        dataset = await repository.get_dataset(
-            owner_user_id=user.id, dataset_id=dataset_id
-        )
+        dataset = await repository.get_dataset(owner_user_id=user.id, dataset_id=dataset_id)
         if dataset is None:
             raise ApiErrorException("BUSINESS_NOT_FOUND")
         cases = await repository.list_cases(owner_user_id=user.id, dataset_id=dataset.id)
@@ -1158,9 +1154,7 @@ def create_app(
         runs = await _evaluation_repository(request).list_runs(
             owner_user_id=user.id, dataset_id=dataset_id
         )
-        return success_response(
-            request, {"items": [_evaluation_run_payload(run) for run in runs]}
-        )
+        return success_response(request, {"items": [_evaluation_run_payload(run) for run in runs]})
 
     @app.get("/evaluations/runs/{run_id}")
     async def get_evaluation_run(
@@ -1564,7 +1558,25 @@ def create_app(
         )
         if task is None:
             raise ApiErrorException("AUTH_FORBIDDEN")
-        steps, evidence, report_links, reports, checkpoints, background_job = await asyncio.gather(
+        agent_trace_repository = repositories.agent_traces
+        if agent_trace_repository is None:
+            raise RuntimeError("Agent trace repository is not configured")
+        traces_task = asyncio.create_task(
+            agent_trace_repository.list_traces(
+                owner_user_id=user.id,
+                execution_type="aiops",
+                resource_type="diagnostic_task",
+                resource_id=task.id,
+            )
+        )
+        (
+            steps,
+            evidence,
+            report_links,
+            reports,
+            checkpoints,
+            background_job,
+        ) = await asyncio.gather(
             repositories.diagnostics.list_steps(owner_user_id=user.id, task_id=task.id),
             repositories.diagnostics.list_evidence(owner_user_id=user.id, task_id=task.id),
             repositories.diagnostics.list_report_evidence_links(
@@ -1579,6 +1591,7 @@ def create_app(
                 resource_id=task.id,
             ),
         )
+        traces = await traces_task
         tool_audits = []
         if repositories.tool_call_audits is not None:
             tool_audits = await repositories.tool_call_audits.list_for_diagnostic_task(
@@ -1596,6 +1609,7 @@ def create_app(
                 ),
                 "steps": [_diagnostic_step_payload(step) for step in steps],
                 "toolCalls": [_agent_tool_call_audit_payload(audit) for audit in tool_audits],
+                "executions": _diagnostic_execution_payloads(traces, steps, tool_audits),
                 "evidence": [_diagnostic_evidence_payload(item) for item in evidence],
                 "reports": [
                     _diagnostic_report_payload(
@@ -2573,6 +2587,70 @@ def _diagnostic_step_payload(record: DiagnosticStepRecord) -> dict[str, object]:
         "payload": record.payload,
         "createdAt": record.created_at.isoformat(),
     }
+
+
+def _diagnostic_execution_payloads(
+    traces: Sequence[AgentTraceRecord],
+    steps: Sequence[DiagnosticStepRecord],
+    tool_audits: Sequence[AgentToolCallAuditRecord],
+) -> list[dict[str, object]]:
+    ordered_traces = sorted(traces, key=lambda item: (item.started_at, item.id))
+    grouped_steps: list[list[str]] = [[] for _ in ordered_traces]
+    grouped_tools: list[list[str]] = [[] for _ in ordered_traces]
+    unassigned_steps: list[str] = []
+    unassigned_tools: list[str] = []
+
+    for step in steps:
+        index = _diagnostic_execution_index(ordered_traces, step.created_at)
+        (grouped_steps[index] if index is not None else unassigned_steps).append(step.id)
+    for audit in tool_audits:
+        index = _diagnostic_execution_index(ordered_traces, audit.started_at)
+        (grouped_tools[index] if index is not None else unassigned_tools).append(audit.id)
+
+    payloads: list[dict[str, object]] = []
+    for index, trace in enumerate(ordered_traces):
+        payloads.append(
+            {
+                "ordinal": index + 1,
+                "traceId": trace.id,
+                "status": trace.status,
+                "summary": trace.summary,
+                "startedAt": trace.started_at.isoformat(),
+                "completedAt": (
+                    trace.completed_at.isoformat() if trace.completed_at is not None else None
+                ),
+                "durationMs": trace.duration_ms,
+                "stepIds": grouped_steps[index],
+                "toolCallIds": grouped_tools[index],
+            }
+        )
+    if unassigned_steps or unassigned_tools:
+        payloads.append(
+            {
+                "ordinal": len(payloads) + 1,
+                "traceId": None,
+                "status": "unknown",
+                "summary": "历史记录无法归属已有 Trace",
+                "startedAt": None,
+                "completedAt": None,
+                "durationMs": None,
+                "stepIds": unassigned_steps,
+                "toolCallIds": unassigned_tools,
+            }
+        )
+    return payloads
+
+
+def _diagnostic_execution_index(
+    traces: Sequence[AgentTraceRecord],
+    timestamp: datetime,
+) -> int | None:
+    matched: int | None = None
+    for index, trace in enumerate(traces):
+        if timestamp < trace.started_at:
+            break
+        matched = index
+    return matched
 
 
 def _diagnostic_evidence_payload(record: DiagnosticEvidenceRecord) -> dict[str, object]:

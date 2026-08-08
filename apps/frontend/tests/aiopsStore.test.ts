@@ -47,6 +47,7 @@ const chain = (): AiopsDiagnosticEvidenceChain => ({
     payload: {},
     createdAt: "2026-07-10T00:00:01.000Z"
   }],
+  executions: [],
   toolCalls: [{
     id: "tool_1",
     ownerUserId: "user_1",
