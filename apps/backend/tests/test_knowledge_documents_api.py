@@ -189,6 +189,55 @@ async def test_document_upload_persists_chunking_configuration_and_returns_previ
 
 
 @pytest.mark.asyncio
+async def test_document_upload_accepts_only_safe_retrieval_metadata(
+    migrated_database_url: str,
+) -> None:
+    app = create_app(database_url=migrated_database_url)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        user = await _register(client, "retrieval-metadata@example.com", "Retrieval metadata")
+        headers = _auth_headers(user["accessToken"])
+        kb_id = f"kb_{user['user']['id']}"
+        metadata = {
+            "knowledgeType": "sop",
+            "incidentId": "payment-timeout",
+            "alertName": "PaymentTimeoutHigh",
+            "service": "payment-service",
+            "sopId": "payment-timeout-sop",
+        }
+        accepted = await client.post(
+            f"/knowledge-bases/{kb_id}/documents",
+            headers=headers,
+            data={"retrievalMetadata": json.dumps(metadata)},
+            files={"file": ("payment-sop.md", b"# Payment SOP", "text/markdown")},
+        )
+        rejected_role = await client.post(
+            f"/knowledge-bases/{kb_id}/documents",
+            headers=headers,
+            data={"retrievalMetadata": json.dumps({"knowledgeType": "diagnostic-case"})},
+            files={"file": ("fake-case.md", b"# Fake case", "text/markdown")},
+        )
+        rejected_scope = await client.post(
+            f"/knowledge-bases/{kb_id}/documents",
+            headers=headers,
+            data={"retrievalMetadata": json.dumps({"ownerUserId": "other-user"})},
+            files={"file": ("forged.md", b"# Forged", "text/markdown")},
+        )
+
+    document_id = accepted.json()["data"]["document"]["id"]
+    record = await app.state.memory_repositories.documents.get_document(
+        owner_user_id=user["user"]["id"],
+        knowledge_base_id=kb_id,
+        document_id=document_id,
+    )
+    assert accepted.status_code == 201
+    assert record is not None
+    assert {key: record.metadata[key] for key in metadata} == metadata
+    assert rejected_role.status_code == 400
+    assert rejected_scope.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_document_upload_rejects_unsupported_and_oversized_files(
     migrated_database_url: str,
 ) -> None:

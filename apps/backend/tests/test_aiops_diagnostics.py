@@ -267,7 +267,17 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
             task_id="diagnostic-a",
             status="accepted",
             query="Investigate worker CPU alarm",
-            input_payload={"alert": {"severity": "critical"}},
+            input_payload={
+                "alert": {
+                    "severity": "critical",
+                    "labels": {
+                        "alertname": "WorkerCpuHigh",
+                        "service": "worker",
+                        "incident_id": "worker-cpu-high",
+                    },
+                    "annotations": {"sop": "worker-cpu-sop"},
+                }
+            },
         )
         embedding = FakeEmbeddingModel()
         retrieval = KnowledgeRetrievalTool(
@@ -327,6 +337,11 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
             diagnostic_task_id=task.id,
         )
         cases = await repositories.diagnostics.list_cases(owner_user_id="user-a")
+        case_document = await repositories.documents.get_document(
+            owner_user_id="user-a",
+            knowledge_base_id="kb_user-a",
+            document_id=cases[0].document_id,
+        )
         trace_repository = repositories.agent_traces
         assert trace_repository is not None
         traces = await trace_repository.list_traces(
@@ -341,11 +356,26 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
     finally:
         await engine.dispose()
 
-    assert embedding.inputs == [["Investigate worker CPU alarm"]]
+    assert embedding.inputs == [[
+        "Investigate worker CPU alarm\n"
+        "worker-cpu-high\n"
+        "WorkerCpuHigh\n"
+        "worker\n"
+        "worker-cpu-sop"
+    ]]
     assert mcp.calls[0][0] == "SearchLog"
     assert persisted is not None
     assert persisted.status == "succeeded"
     assert persisted.result_payload["noSopMatched"] is False
+    planner_payload = steps[0].payload
+    retrieval_context = cast(dict[str, object], planner_payload["retrievalContext"])
+    assert retrieval_context["policy"] == "sop-only"
+    assert retrieval_context["allowedKnowledgeTypes"] == ["sop"]
+    assert retrieval_context["excludedKnowledgeTypes"] == ["diagnostic-case", "document"]
+    selected = cast(list[dict[str, object]], retrieval_context["selected"])
+    assert selected[0]["source"] == "worker-cpu-sop.md"
+    assert selected[0]["knowledgeType"] == "sop"
+    assert "content" not in selected[0]
     assert reports[0].payload["reportGeneration"] == "llm"
     assert reports[0].title == "告警分析报告"
     assert reports[0].content == REPORT_MARKDOWN
@@ -415,6 +445,10 @@ async def test_diagnostic_runs_sop_first_persists_evidence_and_audits(
     assert cases[0].report_id == reports[0].id
     assert cases[0].document_id
     assert cases[0].index_task_id
+    assert case_document is not None
+    assert case_document.metadata["knowledgeType"] == "diagnostic-case"
+    assert case_document.metadata["diagnosticTaskId"] == task.id
+    assert case_document.metadata["diagnosticReportId"] == reports[0].id
     assert scheduler.scheduled == [("user-a", cases[0].index_task_id)]
     events = [
         json.loads(record.message) for record in caplog.records if record.message.startswith("{")
@@ -482,6 +516,10 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
             owner_user_id="user-a",
             task_id=task.id,
         )
+        failed_steps = await repositories.diagnostics.list_steps(
+            owner_user_id="user-a",
+            task_id=task.id,
+        )
         cases = await repositories.diagnostics.list_cases(owner_user_id="user-a")
         audits = await cast(Any, repositories.tool_call_audits).list_for_diagnostic_task(
             owner_user_id="user-a",
@@ -518,6 +556,13 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
     assert persisted is not None
     assert persisted.status == "failed"
     assert persisted.result_payload["noSopMatched"] is True
+    failed_retrieval_context = cast(
+        dict[str, object], failed_steps[0].payload["retrievalContext"]
+    )
+    assert failed_retrieval_context["selected"] == []
+    assert failed_retrieval_context["fallbackReason"] == (
+        "未命中正式 SOP，已退化为通用证据收集计划。"
+    )
     assert reports[0].payload["reportGeneration"] == "fallback"
     assert reports[0].content.startswith("# 告警分析报告")
     assert "未检索到匹配的 SOP" in reports[0].content
@@ -1044,7 +1089,7 @@ def _sop_hit(owner_user_id: str) -> VectorSearchResult:
         content="Check CPU saturation and query worker logs before mitigation.",
         source="worker-cpu-sop.md",
         created_at=1,
-        metadata={"kind": "sop"},
+        metadata={"kind": "sop", "knowledgeType": "sop"},
         score=0.92,
     )
 

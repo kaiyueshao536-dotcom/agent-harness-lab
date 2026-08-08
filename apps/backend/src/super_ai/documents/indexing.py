@@ -471,6 +471,7 @@ def _vector_chunk_record(
     chunk_id = f"{document.id}_chunk_{chunk.index:04d}"
     metadata: dict[str, object] = {
         **chunk.metadata,
+        **_document_retrieval_metadata(document),
         "knowledgeType": _knowledge_type(document),
         "chunkingStrategy": _chunking_kwargs(document)[0],
         "chunkingParameters": _chunking_parameters(document),
@@ -494,6 +495,23 @@ def _vector_chunk_record(
         source=document.source or document.filename,
         created_at=datetime.now(timezone.utc),
     )
+
+
+def _document_retrieval_metadata(document: KnowledgeDocumentRecord) -> dict[str, object]:
+    """Propagate only retrieval labels; scope and chunk identity stay server-owned."""
+    allowed_keys = (
+        "incidentId",
+        "alertName",
+        "service",
+        "sopId",
+        "diagnosticTaskId",
+        "diagnosticReportId",
+    )
+    return {
+        key: value
+        for key in allowed_keys
+        if isinstance((value := document.metadata.get(key)), str) and value
+    }
 
 
 def _knowledge_type(document: KnowledgeDocumentRecord) -> str:

@@ -59,13 +59,32 @@ export interface AiopsDiagnosticReport {
   readonly createdAt: string;
 }
 
+export interface AiopsRetrievalContextSource {
+  readonly documentId: string;
+  readonly source: string;
+  readonly knowledgeType: "document" | "sop" | "diagnostic-case";
+  readonly score: number;
+}
+
+export interface AiopsRetrievalContextSnapshot {
+  readonly policy: "sop-only";
+  readonly query: string;
+  readonly filters: Readonly<Record<string, unknown>>;
+  readonly allowedKnowledgeTypes: readonly string[];
+  readonly excludedKnowledgeTypes: readonly string[];
+  readonly selected: readonly AiopsRetrievalContextSource[];
+  readonly fallbackReason: string | null;
+}
+
 export interface AiopsDiagnosticStep {
   readonly id: string;
   readonly taskId: string;
   readonly sequence: number;
   readonly phase: string;
   readonly status: string;
-  readonly payload: Record<string, unknown>;
+  readonly payload: Record<string, unknown> & {
+    readonly retrievalContext?: AiopsRetrievalContextSnapshot;
+  };
   readonly createdAt: string;
 }
 

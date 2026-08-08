@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
+from typing import cast
 
 import pytest
 
@@ -267,6 +268,54 @@ async def test_retrieval_tool_filters_hits_by_document_metadata_and_scope() -> N
 
     assert [item.chunk_id for item in result.results] == ["chunk_match"]
     assert [item.chunk_id for item in result.citations] == ["chunk_match"]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_tool_excludes_historical_cases_before_reranking_sops() -> None:
+    sop = VectorSearchResult(
+        chunk_id="chunk_sop",
+        document_id="doc_sop",
+        knowledge_base_id="kb_user_a",
+        owner_user_id="user_a",
+        tenant_id="user_a",
+        content="Payment timeout SOP: verify gateway latency and idempotency key.",
+        source="payment-timeout-sop.md",
+        created_at=1_775_779_200_000,
+        metadata={"knowledgeType": "sop", "service": "payment-service"},
+        score=0.82,
+    )
+    contaminated_case = VectorSearchResult(
+        chunk_id="chunk_case",
+        document_id="doc_case",
+        knowledge_base_id="kb_user_a",
+        owner_user_id="user_a",
+        tenant_id="user_a",
+        content="Historical case incorrectly says the MCP server was unavailable.",
+        source="aiops-diagnostic",
+        created_at=1_775_779_200_000,
+        metadata={"knowledgeType": "diagnostic-case", "service": "payment-service"},
+        score=0.99,
+    )
+    reranker = FakeRerankModel()
+    tool = KnowledgeRetrievalTool(
+        embedding_model=FakeEmbeddingModel(),
+        vector_store=FakeRetrievalVectorStore(results=[contaminated_case, sop]),
+        rerank_model=reranker,
+    )
+
+    result = await tool.run(
+        KnowledgeRetrievalToolInput(
+            query="PaymentTimeoutHigh payment-service",
+            filters=KnowledgeRetrievalFilters(metadata={"knowledgeType": "sop"}),
+        ),
+        owner_user_id="user_a",
+        accessible_knowledge_base_ids=("kb_user_a",),
+    )
+
+    assert [item.chunk_id for item in result.results] == ["chunk_sop"]
+    reranked_documents = cast(list[str], reranker.calls[0]["documents"])
+    assert reranked_documents == [sop.content]
+    assert contaminated_case.content not in reranked_documents
 
 
 @pytest.mark.asyncio

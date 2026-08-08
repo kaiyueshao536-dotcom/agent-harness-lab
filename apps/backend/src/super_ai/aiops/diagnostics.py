@@ -30,6 +30,7 @@ from super_ai.observability import elapsed_ms, emit_event
 from super_ai.retrieval import (
     KnowledgeRetrievalCitationSource,
     KnowledgeRetrievalError,
+    KnowledgeRetrievalFilters,
     KnowledgeRetrievalHit,
     KnowledgeRetrievalTool,
     KnowledgeRetrievalToolInput,
@@ -289,6 +290,15 @@ class AiopsDiagnosticService:
         task_id = str(state["task_id"])
         owner_user_id = str(state["owner_user_id"])
         query = str(state["query"])
+        alert = _json_dict(state.get("alert"))
+        retrieval_query = _sop_retrieval_query(query, alert)
+        retrieval_filters = KnowledgeRetrievalFilters(
+            metadata={"knowledgeType": "sop"}
+        )
+        retrieval_arguments: JsonDict = {
+            "query": retrieval_query,
+            "filters": {"metadata": {"knowledgeType": "sop"}},
+        }
         events = [_task_status_event(task_id, "running", "Planner: retrieving SOP evidence.", 15)]
         retrieval_audit_id = f"tool_{uuid4().hex}"
         events.append(
@@ -296,7 +306,7 @@ class AiopsDiagnosticService:
                 retrieval_audit_id,
                 "knowledge_retrieval",
                 "started",
-                {"query": query},
+                retrieval_arguments,
             )
         )
         await self._create_audit(
@@ -304,14 +314,18 @@ class AiopsDiagnosticService:
             task_id=task_id,
             audit_id=retrieval_audit_id,
             tool_name="knowledge_retrieval",
-            arguments={"query": query},
+            arguments=retrieval_arguments,
         )
 
         retrieval_result: KnowledgeRetrievalToolResult | None = None
         retrieval_error: str | None = None
         try:
             retrieval_result = await self._retrieval_tool.run(
-                KnowledgeRetrievalToolInput(query=query, top_k=3),
+                KnowledgeRetrievalToolInput(
+                    query=retrieval_query,
+                    top_k=3,
+                    filters=retrieval_filters,
+                ),
                 owner_user_id=owner_user_id,
                 accessible_knowledge_base_ids=cast(
                     Sequence[str], state["accessible_knowledge_base_ids"]
@@ -366,6 +380,11 @@ class AiopsDiagnosticService:
             )
 
         no_sop_matched = not sop_hits
+        retrieval_context = _retrieval_context_snapshot(
+            query=retrieval_query,
+            hits=retrieval_result.results if retrieval_result is not None else (),
+            retrieval_error=retrieval_error,
+        )
         if no_sop_matched:
             events.append(
                 _task_status_event(
@@ -394,7 +413,7 @@ class AiopsDiagnosticService:
 
         plan, plan_origin = await self._create_plan(
             query=query,
-            alert=_json_dict(state.get("alert")),
+            alert=alert,
             sop_hits=sop_hits,
             no_sop_matched=no_sop_matched,
             available_tools=available_tools,
@@ -413,6 +432,7 @@ class AiopsDiagnosticService:
             "plan": plan,
             "planOrigin": plan_origin,
             "retrievalError": retrieval_error,
+            "retrievalContext": retrieval_context,
         }
         planner_step = await self._create_step(
             owner_user_id=owner_user_id,
@@ -1075,6 +1095,64 @@ def _sop_hit_payload(hit: KnowledgeRetrievalHit) -> JsonDict:
         "bm25Score": hit.bm25_score,
         "rrfScore": hit.rrf_score,
         "rerankScore": hit.rerank_score,
+    }
+
+
+def _sop_retrieval_query(query: str, alert: JsonDict) -> str:
+    """Build a compact, deterministic SOP query from the task and alert identity."""
+    values = [query.strip()]
+    candidates: list[Mapping[str, object]] = [alert]
+    for key in ("labels", "annotations", "context"):
+        nested = alert.get(key)
+        if isinstance(nested, Mapping):
+            candidates.append(cast(Mapping[str, object], nested))
+    for mapping in candidates:
+        for key in (
+            "incidentId",
+            "incident_id",
+            "alertName",
+            "alertname",
+            "name",
+            "service",
+            "sop",
+        ):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.strip():
+                values.append(value.strip())
+    return "\n".join(dict.fromkeys(value for value in values if value))[:2000]
+
+
+def _retrieval_context_snapshot(
+    *,
+    query: str,
+    hits: Sequence[KnowledgeRetrievalHit],
+    retrieval_error: str | None,
+) -> JsonDict:
+    """Persist safe retrieval provenance without prompt or chunk content."""
+    selected: list[JsonDict] = []
+    for hit in hits:
+        metadata = _json_dict(hit.metadata)
+        selected.append(
+            {
+                "documentId": hit.document_id,
+                "source": hit.source,
+                "knowledgeType": str(metadata.get("knowledgeType") or "sop"),
+                "score": hit.score,
+            }
+        )
+    fallback_reason: str | None = None
+    if retrieval_error is not None:
+        fallback_reason = "正式 SOP 检索不可用，已退化为通用证据收集计划。"
+    elif not selected:
+        fallback_reason = "未命中正式 SOP，已退化为通用证据收集计划。"
+    return {
+        "policy": "sop-only",
+        "query": query,
+        "filters": {"metadata": {"knowledgeType": "sop"}},
+        "allowedKnowledgeTypes": ["sop"],
+        "excludedKnowledgeTypes": ["diagnostic-case", "document"],
+        "selected": selected,
+        "fallbackReason": fallback_reason,
     }
 
 

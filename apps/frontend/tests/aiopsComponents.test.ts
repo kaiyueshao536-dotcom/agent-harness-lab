@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AiopsDiagnosticEvidenceChain, AiopsDiagnosticSummary, SseEvent } from "@agent-py/api-contracts";
+import type { AiopsDiagnosticEvidenceChain, AiopsDiagnosticStep, AiopsDiagnosticSummary, SseEvent } from "@agent-py/api-contracts";
 
 import AiopsEvidenceChain from "../src/components/AiopsEvidenceChain.vue";
 import AiopsCaseLibrary from "../src/components/AiopsCaseLibrary.vue";
@@ -42,7 +42,7 @@ describe("AIOps components", () => {
     const chain: AiopsDiagnosticEvidenceChain = {
       task: diagnostic(),
       steps: [
-        { id: "step_1", taskId: "diagnostic_1", sequence: 1, phase: "planner", status: "completed", payload: { noSopMatched: true, plan: [{ tool: "SearchLog", purpose: "查询告警窗口日志" }] }, createdAt: "2026-07-10T00:00:00.000Z" },
+        { id: "step_1", taskId: "diagnostic_1", sequence: 1, phase: "planner", status: "completed", payload: { noSopMatched: false, retrievalContext: { policy: "sop-only", query: "WorkerCpuHigh", filters: { metadata: { knowledgeType: "sop" } }, allowedKnowledgeTypes: ["sop"], excludedKnowledgeTypes: ["diagnostic-case", "document"], selected: [{ documentId: "doc_sop", source: "worker-cpu-sop.md", knowledgeType: "sop", score: 0.9567 }], fallbackReason: null }, plan: [{ tool: "SearchLog", purpose: "查询告警窗口日志" }] }, createdAt: "2026-07-10T00:00:00.000Z" },
         { id: "step_2", taskId: "diagnostic_1", sequence: 2, phase: "executor", status: "completed", payload: { tool: "SearchLog", planStep: { purpose: "查询告警窗口日志" } }, createdAt: "2026-07-10T00:00:01.000Z" },
         { id: "step_3", taskId: "diagnostic_1", sequence: 3, phase: "replanner", status: "completed", payload: { decision: "report", planIndex: 1, planLength: 1, executionFailed: false }, createdAt: "2026-07-10T00:00:02.000Z" }
       ],
@@ -72,6 +72,10 @@ describe("AIOps components", () => {
     expect(execution.text()).toContain("Planner · 生成 1 步诊断计划");
     expect(execution.text()).toContain("Executor · 查询告警窗口日志");
     expect(execution.text()).toContain("Replanner · 证据汇总完成，进入报告");
+    expect(execution.text()).toContain("检索策略：SOP-only（仅正式 SOP）");
+    expect(execution.text()).toContain("排除 diagnostic-case、document");
+    expect(execution.text()).toContain("worker-cpu-sop.md · 角色 sop · 分数 0.9567");
+    expect(execution.text()).toContain("历史诊断案例未进入本次规划上下文");
     expect(execution.text()).toContain("共返回 20 条日志");
     expect(execution.text()).toContain("request timeout");
     expect(execution.findAll("details")).toHaveLength(1);
@@ -81,6 +85,53 @@ describe("AIOps components", () => {
     expect(execution.text()).not.toContain("RAW_PAYLOAD_MARKER");
     expect(execution.text()).not.toContain("evidence_1");
     expect(execution.text()).not.toContain("Persisted report body");
+  });
+
+  it("explains an SOP retrieval fallback without breaking older step payloads", () => {
+    const chain: AiopsDiagnosticEvidenceChain = {
+      task: diagnostic(),
+      steps: [{
+        id: "step_fallback",
+        taskId: "diagnostic_1",
+        sequence: 1,
+        phase: "planner",
+        status: "completed",
+        payload: {
+          noSopMatched: true,
+          retrievalContext: {
+            policy: "sop-only",
+            query: "UnknownAlert",
+            filters: { metadata: { knowledgeType: "sop" } },
+            allowedKnowledgeTypes: ["sop"],
+            excludedKnowledgeTypes: ["diagnostic-case", "document"],
+            selected: [],
+            fallbackReason: "未命中正式 SOP，已退化为通用证据收集计划。"
+          },
+          plan: []
+        },
+        createdAt: "2026-07-10T00:00:00.000Z"
+      }],
+      toolCalls: [],
+      executions: [],
+      evidence: [],
+      reports: [],
+      reportEvidenceLinks: [],
+      checkpoints: []
+    };
+
+    const fallback = mount(AiopsEvidenceChain, { props: { chain } });
+    expect(fallback.text()).toContain("命中来源：0 个");
+    expect(fallback.text()).toContain("退化原因：未命中正式 SOP");
+
+    const legacyStep: AiopsDiagnosticStep = {
+      ...chain.steps[0]!,
+      payload: { noSopMatched: true, plan: [] }
+    };
+    const legacy = mount(AiopsEvidenceChain, {
+      props: { chain: { ...chain, steps: [legacyStep] } }
+    });
+    expect(legacy.text()).toContain("未命中 SOP");
+    expect(legacy.text()).not.toContain("检索策略：SOP-only");
   });
 
   it("separates accumulated retry history into per-trace executions", () => {

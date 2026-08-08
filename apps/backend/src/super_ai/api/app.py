@@ -597,6 +597,7 @@ def create_app(
         file: Annotated[UploadFile, File()],
         overwrite: Annotated[bool, Form()] = False,
         chunking: Annotated[str, Form()] = "",
+        retrieval_metadata: Annotated[str, Form(alias="retrievalMetadata")] = "",
     ) -> object:
         _ensure_knowledge_base_access(user, knowledge_base_id)
         content = await file.read()
@@ -607,6 +608,7 @@ def create_app(
             except ValueError as exc:
                 raise ApiErrorException("VALIDATION_INVALID_ARGUMENT", str(exc)) from exc
             chunking_configuration = _parse_chunking_configuration(chunking)
+            retrieval_metadata_configuration = _parse_retrieval_metadata(retrieval_metadata)
             content_hash = f"sha256:{sha256(content).hexdigest()}"
             repositories = _memory_repositories(request)
             duplicate = await repositories.documents.find_active_by_hash(
@@ -640,6 +642,7 @@ def create_app(
                     "upload": "user-selected",
                     "indexableText": indexable_text,
                     "chunking": chunking_configuration,
+                    **retrieval_metadata_configuration,
                 },
             )
         finally:
@@ -2789,6 +2792,42 @@ def _parse_chunking_configuration(raw: str) -> dict[str, object]:
             "固定字符分片需要 100-5000 的最大字符数，且 overlap 必须大于等于 0 并小于最大字符数。",
         )
     return {"strategy": strategy, "maxCharacters": size, "overlapCharacters": overlap}
+
+
+def _parse_retrieval_metadata(raw: str) -> dict[str, str]:
+    """Accept only safe, user-controlled retrieval labels for uploaded documents."""
+    if not raw.strip():
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ApiErrorException("VALIDATION_INVALID_ARGUMENT") from exc
+    if not isinstance(value, dict):
+        raise ApiErrorException("VALIDATION_INVALID_ARGUMENT")
+
+    allowed_keys = {"knowledgeType", "incidentId", "alertName", "service", "sopId"}
+    mapping = cast(dict[str, object], value)
+    if set(mapping) - allowed_keys:
+        raise ApiErrorException(
+            "VALIDATION_INVALID_ARGUMENT",
+            "检索元数据包含不允许的字段。",
+        )
+
+    parsed: dict[str, str] = {}
+    for key, item in mapping.items():
+        if not isinstance(item, str) or not item.strip() or len(item.strip()) > 240:
+            raise ApiErrorException(
+                "VALIDATION_INVALID_ARGUMENT",
+                "检索元数据值必须是长度不超过 240 的非空字符串。",
+            )
+        parsed[key] = item.strip()
+    knowledge_type = parsed.get("knowledgeType")
+    if knowledge_type is not None and knowledge_type not in {"document", "sop"}:
+        raise ApiErrorException(
+            "VALIDATION_INVALID_ARGUMENT",
+            "用户上传文档的 knowledgeType 只能是 document 或 sop。",
+        )
+    return parsed
 
 
 def _runtime_chunk_size(configuration: dict[str, object]) -> int:

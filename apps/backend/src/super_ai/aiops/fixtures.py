@@ -38,6 +38,8 @@ class JavaEcommerceSopDocument:
     """Generated SOP document ready for upload and indexing."""
 
     incident_id: str
+    alert_name: str
+    service: str
     sop_id: str
     filename: str
     content: str
@@ -490,6 +492,8 @@ def build_java_ecommerce_sop_documents() -> list[JavaEcommerceSopDocument]:
     return [
         JavaEcommerceSopDocument(
             incident_id=incident.incident_id,
+            alert_name=incident.alert_name,
+            service=incident.service,
             sop_id=incident.sop_id,
             filename=f"{incident.sop_id}.md",
             content=_render_java_ecommerce_sop(incident),

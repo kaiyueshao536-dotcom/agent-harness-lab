@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from pathlib import Path
 from typing import cast
@@ -32,11 +33,27 @@ def main() -> None:
     poll_interval = required_int(config, "pollIntervalSeconds")
     documents = (
         [
-            (document.filename, document.content.encode("utf-8"))
+            (
+                document.filename,
+                document.content.encode("utf-8"),
+                {
+                    "knowledgeType": "sop",
+                    "incidentId": document.incident_id,
+                    "alertName": document.alert_name,
+                    "service": document.service,
+                    "sopId": document.sop_id,
+                },
+            )
             for document in build_java_ecommerce_sop_documents()
         ]
         if args.profile == "java-ecommerce"
-        else [(SOP_PATH.name, SOP_PATH.read_bytes())]
+        else [
+            (
+                SOP_PATH.name,
+                SOP_PATH.read_bytes(),
+                {"knowledgeType": "sop", "sopId": "ecommerce-quant-pricing-latency-sop"},
+            )
+        ]
     )
     indexed_document_ids: list[str] = []
     with httpx.Client(base_url=base_url, timeout=15) as client:
@@ -46,11 +63,14 @@ def main() -> None:
         user_id = _string(user["id"])
         headers = {"Authorization": f"Bearer {token}"}
         knowledge_base_id = f"kb_{user_id}"
-        for filename, content in documents:
+        for filename, content, retrieval_metadata in documents:
             upload = client.post(
                 f"/knowledge-bases/{knowledge_base_id}/documents",
                 headers=headers,
-                data={"overwrite": "true"},
+                data={
+                    "overwrite": "true",
+                    "retrievalMetadata": json.dumps(retrieval_metadata, ensure_ascii=False),
+                },
                 files={"file": (filename, content, "text/markdown")},
             )
             upload.raise_for_status()

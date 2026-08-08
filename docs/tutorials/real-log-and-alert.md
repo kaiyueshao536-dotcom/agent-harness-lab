@@ -55,7 +55,7 @@ uv run python scripts/publish_java_ecommerce_alerts.py --profile java-ecommerce
 uv run python scripts/seed_java_ecommerce_aiops_sops.py --profile java-ecommerce
 ```
 
-脚本使用 `aiopsDemo` 账户通过真实后端 API 上传 10 份 Markdown SOP，并逐份等待 Milvus 索引成功。每份 SOP 包含对应 trace 查询、指标阈值、根因假设、排查步骤、恢复动作和验证标准。
+脚本使用 `aiopsDemo` 账户通过真实后端 API 上传 10 份 Markdown SOP，并逐份等待 Milvus 索引成功。每份 SOP 包含对应 trace 查询、指标阈值、根因假设、排查步骤、恢复动作和验证标准；上传时还写入 `knowledgeType=sop`、`incidentId`、`alertName`、`service` 和 `sopId`。P3.3 升级前已索引过 SOP 的环境需要重新执行本步骤，才能补齐关联元数据。
 
 ## 4. 从前端执行诊断
 
@@ -63,6 +63,8 @@ uv run python scripts/seed_java_ecommerce_aiops_sops.py --profile java-ecommerce
 2. 进入 **AIOps diagnosis** 页面并刷新活动告警。
 3. 选择任一 `java-ecommerce` 告警并开始诊断。
 4. 等待 Planner、Executor、Replanner、Report 的 SSE 事件结束。
+
+在执行链的 Planner 中确认检索策略显示为 `SOP-only`，命中来源的知识角色均为 `sop`；`diagnostic-case` 和普通 `document` 不应进入默认规划上下文。
 
 成功证据链必须包括选中告警、同 incident 的 SOP 知识引用，以及通过真实 CLS MCP `SearchLog` 查询到的相同 trace ID 日志。某个工具失败时报告必须如实说明，不得使用其他场景证据填充。
 

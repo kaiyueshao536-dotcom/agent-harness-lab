@@ -6,6 +6,7 @@ import type {
   AiopsDiagnosticExecution,
   AiopsDiagnosticEvidenceChain,
   AiopsDiagnosticStep,
+  AiopsRetrievalContextSnapshot,
   ToolCallAudit
 } from "@agent-py/api-contracts";
 
@@ -94,8 +95,8 @@ function stepOutput(step: AiopsDiagnosticStep): readonly string[] {
     });
     const evidenceLine = payload.noSopMatched === true
       ? "未命中 SOP，计划退化为通用诊断流程。"
-      : "计划已参考可访问的 SOP 或历史案例。";
-    return [evidenceLine, ...lines];
+      : "计划已参考正式 SOP；历史诊断案例未进入本次规划上下文。";
+    return [evidenceLine, ...retrievalContextLines(payload.retrievalContext), ...lines];
   }
   if (step.phase === "executor") {
     const tool = typeof payload.tool === "string" ? payload.tool : "未指定工具";
@@ -107,6 +108,29 @@ function stepOutput(step: AiopsDiagnosticStep): readonly string[] {
     `计划进度：${planIndex}/${planLength}`,
     payload.executionFailed === true ? "检测到执行失败，停止后续步骤。" : "已根据现有结果完成下一步判断。"
   ];
+}
+
+function retrievalContextLines(value: unknown): readonly string[] {
+  const snapshot = record(value) as Partial<AiopsRetrievalContextSnapshot>;
+  if (snapshot.policy !== "sop-only") return [];
+  const selected = Array.isArray(snapshot.selected) ? snapshot.selected.map(record) : [];
+  const lines = [
+    "检索策略：SOP-only（仅正式 SOP）",
+    "知识角色：允许 sop；排除 diagnostic-case、document",
+    `命中来源：${selected.length} 个`
+  ];
+  for (const source of selected.slice(0, 3)) {
+    const name = typeof source.source === "string" ? source.source : "未知来源";
+    const knowledgeType = typeof source.knowledgeType === "string"
+      ? source.knowledgeType
+      : "sop";
+    const score = typeof source.score === "number" ? source.score.toFixed(4) : "未知";
+    lines.push(`${name} · 角色 ${knowledgeType} · 分数 ${score}`);
+  }
+  if (typeof snapshot.fallbackReason === "string" && snapshot.fallbackReason) {
+    lines.push(`退化原因：${snapshot.fallbackReason}`);
+  }
+  return lines;
 }
 
 function parseSummary(value: string | null): unknown {

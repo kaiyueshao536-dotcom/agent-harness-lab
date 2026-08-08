@@ -26,7 +26,8 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
 - **自动评测 Harness**：不可变版本数据集把真实 Trace 绑定到确定性质量规则，生成逐案例检查、聚合指标、质量门禁和同数据集基线差异；离线 CLI 与 CI 无需模型或云服务密钥。
 - **工具失败恢复闭环**：MCP 连接重试以 `Tool → Attempt` 父子 Span 留痕；时间线显示父子层级、尝试序号和错误类别；失败诊断即使已有降级报告也可关联原 Job 重试，保留旧 Job/Trace，并用同一评测数据集验证恢复结果。
-- **恢复证据质量**：诊断详情按独立 Trace 分组跨重试累计记录；历史案例只参与 Planner，零日志结果使用确定性谨慎报告；`evidence_cautious` 与排除规则阻止过度推断和已知历史污染词进入发布 Gate。
+- **恢复证据质量**：诊断详情按独立 Trace 分组跨重试累计记录；历史案例不再作为 Report 的当前事实，零日志结果使用确定性谨慎报告；`evidence_cautious` 与排除规则阻止过度推断和已知历史污染词进入发布 Gate。
+- **RAG 证据角色隔离**：AIOps Planner 默认只召回正式 SOP，在 Rerank 前排除历史诊断案例；安全 Context Snapshot 展示过滤策略、命中来源、知识角色、分数和退化原因，不保存提示词或知识正文。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -150,6 +151,7 @@ uv run pyright
 uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
 uv run super-ai-eval ../../evals/fixtures/p3-tool-recovery-pass.json
 uv run super-ai-eval ../../evals/fixtures/p3-report-evidence-pass.json
+uv run super-ai-eval ../../evals/fixtures/p3.3-rag-evidence-isolation-pass.json
 uv run pytest
 ```
 

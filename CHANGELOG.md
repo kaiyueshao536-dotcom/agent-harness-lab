@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P3.3 | 2026-08-09 | AIOps RAG 证据角色隔离 | 以不可变 Tag 指向为准 | [`p3.3-rag-evidence-isolation`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.3-rag-evidence-isolation) | [P3.3 复盘](docs/version-history/p3.3-rag-evidence-isolation.md) |
 | P3.2 | 2026-08-09 | 恢复执行与报告证据边界闭环 | 以不可变 Tag 指向为准 | [`p3.2-recovery-evidence-quality`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.2-recovery-evidence-quality) | [P3.2 复盘](docs/version-history/p3.2-recovery-evidence-quality.md) |
 | P3.1 | 2026-08-08 | 手工验收缺口闭环 | 以不可变 Tag 指向为准 | [`p3.1-manual-acceptance-gap-closure`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.1-manual-acceptance-gap-closure) | [P3.1 复盘](docs/version-history/p3.1-manual-acceptance-gap-closure.md) |
 | P3 | 2026-08-08 | Trace 驱动的外部工具失败恢复闭环 | 以不可变 Tag 指向为准 | [`p3-trace-driven-tool-failure-recovery`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3-trace-driven-tool-failure-recovery) | [P3 复盘](docs/version-history/p3-trace-driven-tool-failure-recovery.md) |
@@ -35,6 +36,13 @@
 - 工具失败或 SearchLog 零结果使用确定性谨慎报告，不把无匹配日志直接推断为 Topic 无数据或采集链路异常。
 - 修复 Topic ID 脱敏占位符的重复右括号，并新增 `evidence_cautious` 离线确定性评测规则。
 - 用真实的两次失败、一次恢复 Trace 和 P2 Gate 完成手工复测；详细数据见 P3.2 复盘。
+
+## P3.3 AIOps RAG 证据角色隔离
+
+- Planner 默认只检索正式 SOP，在 Rerank 前排除历史 `diagnostic-case` 和普通文档。
+- SOP 上传与索引补齐 incident、alert、service、sopId 等受控元数据，同时保持服务器 owner/tenant 边界。
+- Planner 持久化安全的 retrieval Context Snapshot，前端可解释检索策略、来源角色、分数和退化原因。
+- 混合语料测试与 P3.3 离线 Gate 将真实历史污染问题转为可重复防回归检查。
 
 ## 维护规则
 

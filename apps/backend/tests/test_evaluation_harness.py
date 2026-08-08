@@ -142,6 +142,22 @@ def test_p3_report_evidence_fixture_passes_offline_cli(tmp_path: Path) -> None:
     assert '"kind": "evidence_cautious"' in payload
 
 
+def test_p3_3_rag_evidence_isolation_fixture_passes_offline_cli(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    fixture = repository_root / "evals" / "fixtures" / "p3.3-rag-evidence-isolation-pass.json"
+    report = tmp_path / "p3-3-rag-evidence-isolation.json"
+
+    raw_fixture = fixture.read_text(encoding="utf-8")
+    assert "api_key" not in raw_fixture.casefold()
+    assert "authorization" not in raw_fixture.casefold()
+    assert '"password"' not in raw_fixture.casefold()
+    assert run_cli([str(fixture), "--output", str(report)]) == 0
+    payload = report.read_text(encoding="utf-8")
+    assert '"gateStatus": "passed"' in payload
+    assert '"kind": "contains_all"' in payload
+    assert '"kind": "excludes_all"' in payload
+
+
 def test_duration_regression_fails_baseline_gate() -> None:
     result = evaluate_gate(
         EvaluationGate(

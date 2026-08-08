@@ -76,6 +76,8 @@ def test_java_ecommerce_logs_alerts_and_sops_are_correlated() -> None:
         assert labels["fixture"] == "java-ecommerce"
         assert annotations["trace_id"] == log["trace_id"]
         assert annotations["sop"] == log["sop"] == document.sop_id
+        assert document.alert_name == labels["alertname"]
+        assert document.service == labels["service"]
         assert log["trace_id"] in document.content
         assert log["metric_name"] in document.content
         assert "## 排查步骤" in document.content

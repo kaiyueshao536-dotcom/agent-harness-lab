@@ -117,7 +117,15 @@ async def test_document_indexing_service_writes_scoped_chunks_and_marks_success(
             size_bytes=64,
             mime_type="text/markdown",
             content_hash="sha256:abc",
-            metadata={"indexableText": "alpha beta gamma delta epsilon", "kind": "sop"},
+            metadata={
+                "indexableText": "alpha beta gamma delta epsilon",
+                "kind": "sop",
+                "incidentId": "worker-cpu-high",
+                "alertName": "WorkerCpuHigh",
+                "service": "worker",
+                "sopId": "worker-cpu-sop",
+                "ownerUserId": "forged-owner",
+            },
         )
         task = await repositories.document_index_tasks.create_task(
             owner_user_id="user-a",
@@ -170,6 +178,11 @@ async def test_document_indexing_service_writes_scoped_chunks_and_marks_success(
     assert vector_store.inserted_chunks[0].metadata["ownerUserId"] == "user-a"
     assert vector_store.inserted_chunks[0].metadata["chunkIndex"] == 0
     assert vector_store.inserted_chunks[0].metadata["knowledgeType"] == "sop"
+    assert vector_store.inserted_chunks[0].metadata["incidentId"] == "worker-cpu-high"
+    assert vector_store.inserted_chunks[0].metadata["alertName"] == "WorkerCpuHigh"
+    assert vector_store.inserted_chunks[0].metadata["service"] == "worker"
+    assert vector_store.inserted_chunks[0].metadata["sopId"] == "worker-cpu-sop"
+    assert vector_store.inserted_chunks[0].metadata["ownerUserId"] == "user-a"
     events = [
         json.loads(record.message) for record in caplog.records if record.message.startswith("{")
     ]

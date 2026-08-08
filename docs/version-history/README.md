@@ -6,6 +6,7 @@
 
 ## 当前版本
 
+- [P3.3：AIOps RAG 证据角色隔离](p3.3-rag-evidence-isolation.md)
 - [P3.2：恢复执行与报告证据边界闭环](p3.2-recovery-evidence-quality.md)
 - [P3.1：手工验收缺口闭环](p3.1-manual-acceptance-gap-closure.md)
 - [P0：工程展示底座](p0-engineering-foundation.md)
