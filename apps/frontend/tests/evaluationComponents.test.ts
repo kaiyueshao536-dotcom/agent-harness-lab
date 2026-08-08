@@ -76,10 +76,63 @@ describe("Evaluation workspace", () => {
 
     expect(savedRuleCounts).toEqual([2]);
   });
+  it("clears foreign Trace bindings and baseline after creating a dataset", async () => {
+    const runRequests: Array<{ datasetId: string; request: Parameters<EvaluationClient["runDataset"]>[1] }> = [];
+    const createdDataset = {
+      ...datasetFixture(),
+      id: "dataset-2",
+      name: "P3.3.1 regression",
+      cases: [{
+        ...datasetFixture().cases[0]!,
+        id: "case-2",
+        name: "New dataset case"
+      }]
+    };
+    setEvaluationClientFactoryForTests(() => fakeClient({
+      createdDataset,
+      onRun: (datasetId, request) => runRequests.push({ datasetId, request })
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      data: { items: [trace()] },
+      meta: { requestId: "request-1" }
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    setActivePinia(createPinia());
+    const wrapper = mount(EvaluationView, {
+      global: { stubs: { RouterLink: { template: "<a><slot /></a>" } } }
+    });
+    await flushPromises();
+
+    await wrapper.get(".binding-list select").setValue("trace-1");
+    await wrapper.get(".run-controls select").setValue("run-1");
+    await wrapper.get(".evaluation-view__catalog header button").trigger("click");
+    const builder = wrapper.get(".case-builder");
+    const inputs = builder.findAll("input");
+    await inputs[0]!.setValue("New dataset case");
+    await inputs[1]!.setValue("Verify dataset-scoped run draft");
+    const caseButtons = builder.findAll("button.secondary");
+    await caseButtons[caseButtons.length - 1]!.trigger("click");
+    await wrapper.get(".evaluation-create > button.primary").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get(".binding-list select").element).toHaveProperty("value", "");
+    expect(wrapper.get(".run-controls select").element).toHaveProperty("value", "");
+    await wrapper.get(".binding-list select").setValue("trace-1");
+    await wrapper.get(".run-controls button").trigger("click");
+    await flushPromises();
+
+    expect(runRequests).toEqual([{
+      datasetId: "dataset-2",
+      request: {
+        candidateLabel: "P2 candidate",
+        traceBindings: { "case-2": "trace-1" }
+      }
+    }]);
+  });
 });
 
-function fakeClient(options: { readonly onCreate?: (ruleCount: number) => void } = {}): EvaluationClient {
-  const dataset = {
+function datasetFixture() {
+  return {
     id: "dataset-1",
     name: "Core regression",
     version: "v1",
@@ -101,6 +154,17 @@ function fakeClient(options: { readonly onCreate?: (ruleCount: number) => void }
       }]
     }]
   };
+}
+
+function fakeClient(options: {
+  readonly onCreate?: (ruleCount: number) => void;
+  readonly createdDataset?: ReturnType<typeof datasetFixture>;
+  readonly onRun?: (
+    datasetId: string,
+    request: Parameters<EvaluationClient["runDataset"]>[1]
+  ) => void;
+} = {}): EvaluationClient {
+  const dataset = datasetFixture();
   const run = {
     id: "run-1",
     datasetId: "dataset-1",
@@ -144,13 +208,16 @@ function fakeClient(options: { readonly onCreate?: (ruleCount: number) => void }
   return {
     createDataset: async (request) => {
       options.onCreate?.(request.cases[0]?.rules.length ?? 0);
-      return dataset;
+      return options.createdDataset ?? dataset;
     },
     getDataset: async () => dataset,
     listDatasets: async () => ({ items: [dataset] }),
     listRuns: async () => ({ items: [run] }),
     getRun: async () => report,
-    runDataset: async () => report
+    runDataset: async (datasetId, request) => {
+      options.onRun?.(datasetId, request);
+      return report;
+    }
   };
 }
 

@@ -113,6 +113,11 @@ function addCase(): void {
   ruleValue.value = "";
 }
 
+function resetRunDraft(): void {
+  Object.keys(traceBindings).forEach((key) => delete traceBindings[key]);
+  baselineRunId.value = "";
+}
+
 async function createDataset(): Promise<void> {
   if (stagedCases.value.length === 0) return;
   await evaluations.createDataset({
@@ -126,14 +131,14 @@ async function createDataset(): Promise<void> {
     },
     cases: stagedCases.value
   });
+  resetRunDraft();
   showCreate.value = false;
   stagedCases.value = [];
   stagedRules.value = [];
 }
 
 async function selectDataset(datasetId: string): Promise<void> {
-  Object.keys(traceBindings).forEach((key) => delete traceBindings[key]);
-  baselineRunId.value = "";
+  resetRunDraft();
   await evaluations.selectDataset(datasetId);
 }
 

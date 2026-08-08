@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P3.3.1 | 2026-08-09 | Evaluation 跨 Dataset 运行草稿隔离 | 以不可变 Tag 指向为准 | `p3.3.1-evaluation-binding-reset` | [P3.3.1 复盘](docs/version-history/p3.3.1-evaluation-binding-reset.md) |
 | P3.3 | 2026-08-09 | AIOps RAG 证据角色隔离 | 以不可变 Tag 指向为准 | [`p3.3-rag-evidence-isolation`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.3-rag-evidence-isolation) | [P3.3 复盘](docs/version-history/p3.3-rag-evidence-isolation.md) |
 | P3.2 | 2026-08-09 | 恢复执行与报告证据边界闭环 | 以不可变 Tag 指向为准 | [`p3.2-recovery-evidence-quality`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.2-recovery-evidence-quality) | [P3.2 复盘](docs/version-history/p3.2-recovery-evidence-quality.md) |
 | P3.1 | 2026-08-08 | 手工验收缺口闭环 | 以不可变 Tag 指向为准 | [`p3.1-manual-acceptance-gap-closure`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.1-manual-acceptance-gap-closure) | [P3.1 复盘](docs/version-history/p3.1-manual-acceptance-gap-closure.md) |
@@ -44,6 +45,12 @@
 - Planner 持久化安全的 retrieval Context Snapshot，前端可解释检索策略、来源角色、分数和退化原因。
 - 混合语料测试与 P3.3 离线 Gate 将真实历史污染问题转为可重复防回归检查。
 - 发布后使用真实支付告警 Trace 创建 P3.3 专用不可变 Dataset；4 类确定性规则全部通过，报告中的 5 个已知历史污染词均未出现。
+
+## P3.3.1 Evaluation 跨 Dataset 运行草稿隔离
+
+- 修复创建新 Dataset 后仍提交旧 Case Trace 绑定和旧 Baseline 的前端状态泄漏。
+- Dataset 创建与切换统一调用运行草稿清理；候选版本标签保留，后端精确绑定校验不放宽。
+- 增加真实复现顺序的组件测试，证明新 Dataset 首次运行只提交新 Case ID。
 
 ## 维护规则
 
