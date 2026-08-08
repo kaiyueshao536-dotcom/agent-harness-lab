@@ -432,13 +432,17 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
             status="accepted",
             query="Investigate missing logs",
         )
-        mcp = FakeMcpClient(error=McpClientError("CLS unavailable"))
+        internal_url = "http://127.0.0.1:3000/sse"
+        internal_topic = "11111111-2222-4333-8444-555555555555"
+        mcp = FakeMcpClient(
+            error=McpClientError(
+                f"MCP server unavailable at {internal_url}; TopicId: {internal_topic}"
+            )
+        )
+        provider = FakeLlmProvider(report_error=RuntimeError("report model unavailable"))
         service = AiopsDiagnosticService(
             repositories=repositories,
-            llm_provider=cast(
-                LlmProvider,
-                FakeLlmProvider(report_error=RuntimeError("report model unavailable")),
-            ),
+            llm_provider=cast(LlmProvider, provider),
             retrieval_tool=KnowledgeRetrievalTool(
                 embedding_model=FakeEmbeddingModel(),
                 vector_store=FakeVectorStore([]),
@@ -469,6 +473,10 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
             task_id=task.id,
         )
         cases = await repositories.diagnostics.list_cases(owner_user_id="user-a")
+        audits = await cast(Any, repositories.tool_call_audits).list_for_diagnostic_task(
+            owner_user_id="user-a",
+            diagnostic_task_id=task.id,
+        )
         trace_repository = repositories.agent_traces
         assert trace_repository is not None
         failed_traces = await trace_repository.list_traces(
@@ -505,6 +513,22 @@ async def test_diagnostic_no_sop_and_mcp_failure_are_explicit(
     assert "未检索到匹配的 SOP" in reports[0].content
     assert "诊断工具执行失败" in reports[0].content
     assert "证据不足，无法确认根因" in reports[0].content
+    report_prompt = next(
+        str(item) for item in provider.chat_model.inputs if "AIOps 诊断报告生成器" in str(item)
+    )
+    serialized_events = json.dumps(events, ensure_ascii=False)
+    assert internal_url not in reports[0].content
+    assert internal_topic not in reports[0].content
+    assert internal_url not in str(reports[0].payload)
+    assert internal_topic not in str(reports[0].payload)
+    assert internal_url not in report_prompt
+    assert internal_topic not in report_prompt
+    assert internal_url not in serialized_events
+    assert internal_topic not in serialized_events
+    search_audit = next(audit for audit in audits if audit.tool_name == "SearchLog")
+    assert search_audit.error_message is not None
+    assert internal_url in search_audit.error_message
+    assert internal_topic in search_audit.error_message
     assert any(event["type"] == "error" for event in events)
     assert any(_is_failed_tool_event(event) for event in events)
     assert cases == []
@@ -589,6 +613,54 @@ async def test_aiops_stream_requires_task_owner(migrated_database_url: str) -> N
     assert owner_chain.json()["data"]["task"]["id"] == diagnostic_id
     assert owner_chain.json()["data"]["task"]["backgroundJob"]["resourceId"] == diagnostic_id
     assert denied_chain.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_evidence_chain_redacts_legacy_report_connection_details(
+    migrated_database_url: str,
+) -> None:
+    app = create_app(database_url=migrated_database_url)
+    transport = httpx.ASGITransport(app=app)
+    internal_url = "http://127.0.0.1:3000/sse"
+    internal_topic = "11111111-2222-4333-8444-555555555555"
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        owner = await _register(client, "legacy-report-owner@example.com")
+        task = await app.state.memory_repositories.diagnostics.create_task(
+            owner_user_id=owner["user"]["id"],
+            task_id="diagnostic-legacy-report",
+            status="failed",
+            query="Inspect legacy report exposure",
+        )
+        await app.state.memory_repositories.diagnostics.add_report(
+            owner_user_id=owner["user"]["id"],
+            report_id="report-legacy-unsafe",
+            task_id=task.id,
+            title="Legacy report",
+            content=(
+                f"SearchLog failed at {internal_url}. "
+                f"TopicId: {internal_topic}."
+            ),
+            payload={
+                "evidence": [
+                    {
+                        "summary": f"MCP unavailable at {internal_url}",
+                        "topicId": internal_topic,
+                    }
+                ]
+            },
+        )
+
+        response = await client.get(
+            f"/aiops/diagnostics/{task.id}/evidence-chain",
+            headers=_auth_headers(owner["accessToken"]),
+        )
+
+    assert response.status_code == 200
+    public_report = str(response.json()["data"]["reports"][0])
+    assert internal_url not in public_report
+    assert internal_topic not in public_report
+    assert "[内部地址已隐藏]" in public_report
+    assert "[内部资源标识已隐藏]" in public_report
 
 
 @pytest.mark.asyncio

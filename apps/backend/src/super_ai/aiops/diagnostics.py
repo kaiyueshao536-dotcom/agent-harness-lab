@@ -569,7 +569,8 @@ class AiopsDiagnosticService:
             else:
                 raise ValueError("Diagnostic plan did not specify a tool.")
         except Exception as exc:
-            safe_error = _safe_error(exc)
+            audit_error = _safe_error(exc)
+            public_error = _public_tool_error(tool_name, exc)
             await self._trace_service.finalize_span(
                 trace,
                 span_id=tool_span_id,
@@ -586,11 +587,16 @@ class AiopsDiagnosticService:
                 "stepId": str(step.get("id") or f"step_{plan_index + 1}"),
                 "tool": tool_name or "unknown",
                 "status": "failed",
-                "summary": safe_error,
+                "summary": public_error,
             }
             events.extend(
                 [
-                    _tool_event(audit_id, tool_name or "unknown", "failed", {"error": safe_error}),
+                    _tool_event(
+                        audit_id,
+                        tool_name or "unknown",
+                        "failed",
+                        {"error": public_error},
+                    ),
                     _error_event("SYSTEM_UNAVAILABLE"),
                 ]
             )
@@ -598,14 +604,18 @@ class AiopsDiagnosticService:
                 owner_user_id=owner_user_id,
                 audit_id=audit_id,
                 status="failed",
-                error_message=safe_error,
+                error_message=audit_error,
             )
             executor_step = await self._create_step(
                 owner_user_id=owner_user_id,
                 task_id=task_id,
                 phase="executor",
                 status="failed",
-                payload={"planStep": step, "tool": tool_name, "error": safe_error},
+                payload={
+                    "planStep": _public_plan_step(step),
+                    "tool": tool_name,
+                    "error": public_error,
+                },
             )
             evidence_record = await self._repositories.diagnostics.create_evidence(
                 owner_user_id=owner_user_id,
@@ -615,8 +625,8 @@ class AiopsDiagnosticService:
                 tool_call_id=audit_id,
                 kind=_evidence_kind_for_tool(tool_name),
                 source=tool_name or "unknown",
-                summary=safe_error,
-                payload={"error": safe_error, "arguments": arguments},
+                summary=public_error,
+                payload={"error": public_error},
             )
             evidence["evidenceId"] = evidence_record.id
             await self._save_checkpoint(state, "executor", {"evidence": evidence})
@@ -754,9 +764,9 @@ class AiopsDiagnosticService:
         report_content, report_generation = await self._generate_report_content(state)
         report_payload: JsonDict = {
             "noSopMatched": no_sop_matched,
-            "plan": _json_list(state.get("plan")),
+            "plan": _report_plan_context(state.get("plan")),
             "planOrigin": str(state.get("plan_origin") or "generic"),
-            "evidence": evidence,
+            "evidence": _report_evidence_context(evidence),
             "evidenceIds": evidence_ids,
             "reportGeneration": report_generation,
             "status": status,
@@ -818,7 +828,7 @@ class AiopsDiagnosticService:
                         "report": {
                             "id": report.id,
                             "title": report.title,
-                            "content": report.content,
+                            "content": redact_diagnostic_public_text(report.content),
                             "format": "markdown",
                         }
                     },
@@ -1186,8 +1196,8 @@ def _report_payload(report: DiagnosticReportRecord) -> JsonDict:
     return {
         "id": report.id,
         "title": report.title,
-        "content": report.content,
-        "payload": _json_dict(report.payload),
+        "content": redact_diagnostic_public_text(report.content),
+        "payload": redact_diagnostic_public_value(report.payload),
         "createdAt": report.created_at.isoformat(),
     }
 
@@ -1198,7 +1208,7 @@ def _report_prompt(state: AiopsDiagnosticState) -> str:
         "alert": _json_dict(state.get("alert")),
         "noSopMatched": bool(state.get("no_sop_matched")),
         "sopEvidence": _report_sop_context(state.get("sop_hits")),
-        "plan": _json_list(state.get("plan")),
+        "plan": _report_plan_context(state.get("plan")),
         "executionFailed": bool(state.get("execution_failed")),
         "executionEvidence": _report_evidence_context(state.get("evidence")),
     }
@@ -1290,7 +1300,7 @@ def _clean_markdown_report(content: str) -> str | None:
         return None
     if not all(heading in report for heading in AIOPS_REPORT_REQUIRED_HEADINGS):
         return None
-    return report
+    return redact_diagnostic_public_text(report)
 
 
 def _fallback_report_content(
@@ -1541,6 +1551,18 @@ def _report_evidence_context(value: object) -> list[JsonDict]:
     ]
 
 
+def _report_plan_context(value: object) -> list[JsonDict]:
+    return [_public_plan_step(item) for item in _json_list(value)]
+
+
+def _public_plan_step(step: Mapping[str, object]) -> JsonDict:
+    return {
+        key: _safe_value(step[key])
+        for key in ("id", "tool", "purpose")
+        if key in step
+    }
+
+
 def _safe_value(value: object) -> object:
     if isinstance(value, Mapping):
         return {str(key): _safe_value(item) for key, item in value.items()}
@@ -1559,6 +1581,52 @@ def _bounded_json(value: object, limit: int = 4_000) -> str:
 def _safe_error(exc: Exception) -> str:
     message = re.sub(r"(?:sk-[A-Za-z0-9_-]+|AKID[A-Za-z0-9]+)", "[redacted]", str(exc))
     return message[:500] or "Tool invocation failed."
+
+
+def _public_tool_error(tool_name: str, exc: Exception) -> str:
+    safe_tool_name = tool_name or "External tool"
+    return (
+        f"{safe_tool_name} 外部工具当前不可用（{exc.__class__.__name__}），"
+        "请恢复服务后重试。"
+    )
+
+
+def redact_diagnostic_public_text(content: str) -> str:
+    """Remove internal connection details from user-facing diagnostic text."""
+    redacted = re.sub(
+        r"https?://[^\s)）\]】>\"'”’、，；。]+",
+        "[内部地址已隐藏]",
+        content,
+    )
+    redacted = re.sub(
+        r"(?i)(topic\s*id|topicid|topic_id)(\s*[:=：]\s*)[^\s,，;；)）\]】]+",
+        r"\1\2[内部资源标识已隐藏]",
+        redacted,
+    )
+    return re.sub(
+        r"(?:sk-[A-Za-z0-9_-]+|AKID[A-Za-z0-9]+)",
+        "[redacted]",
+        redacted,
+    )
+
+
+def redact_diagnostic_public_value(value: object) -> object:
+    """Recursively redact strings in a diagnostic payload returned to clients."""
+    if isinstance(value, str):
+        return redact_diagnostic_public_text(value)
+    if isinstance(value, Mapping):
+        redacted: dict[str, object] = {}
+        for key, item in value.items():
+            public_key = str(key)
+            normalized_key = re.sub(r"[^a-z0-9]", "", public_key.lower())
+            if normalized_key == "topicid" and isinstance(item, str) and item:
+                redacted[public_key] = "[内部资源标识已隐藏]"
+            else:
+                redacted[public_key] = redact_diagnostic_public_value(item)
+        return redacted
+    if isinstance(value, (list, tuple)):
+        return [redact_diagnostic_public_value(item) for item in value]
+    return value
 
 
 def _evidence_kind_for_tool(tool_name: str) -> str:

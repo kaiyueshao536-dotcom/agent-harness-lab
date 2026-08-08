@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ from super_ai.alerts import (
     AlertmanagerAlertProvider,
     AlertProviderError,
     PrometheusAlertProvider,
+    build_alertmanager_alert_provider,
 )
 from super_ai.api.app import create_app
 
@@ -40,6 +42,65 @@ class FakeAlertProvider:
                 context={"fingerprint": "fingerprint-checkout-latency"},
             )
         ]
+
+
+def test_alert_provider_builder_ignores_disabled_placeholder_source(tmp_path: Path) -> None:
+    config_path = tmp_path / "project.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "prometheusAlerts": {
+                    "timeoutSeconds": 5,
+                    "sources": [
+                        {
+                            "id": "disabled-placeholder",
+                            "enabled": False,
+                            "type": "prometheus-v1",
+                            "alertsApi": "",
+                        },
+                        {
+                            "id": "local-alertmanager",
+                            "enabled": True,
+                            "type": "alertmanager-v2",
+                            "alertsApi": "http://127.0.0.1:9093/api/v2/alerts",
+                        },
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    provider = build_alertmanager_alert_provider(config_path=config_path)
+
+    assert isinstance(provider, AggregatedAlertProvider)
+    assert len(provider.providers) == 1
+    assert isinstance(provider.providers[0], AlertmanagerAlertProvider)
+
+
+def test_alert_provider_builder_rejects_config_without_enabled_source(tmp_path: Path) -> None:
+    config_path = tmp_path / "project.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "prometheusAlerts": {
+                    "timeoutSeconds": 5,
+                    "sources": [
+                        {
+                            "id": "disabled-placeholder",
+                            "enabled": False,
+                            "type": "prometheus-v1",
+                            "alertsApi": "",
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AlertProviderError, match="invalid"):
+        build_alertmanager_alert_provider(config_path=config_path)
 
 
 @pytest.mark.asyncio

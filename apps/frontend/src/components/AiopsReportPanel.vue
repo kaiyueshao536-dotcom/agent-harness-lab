@@ -30,15 +30,30 @@ defineEmits<{ retry: [] }>();
         <p>诊断产物</p>
         <h3>最终诊断报告</h3>
       </div>
-      <span v-if="report" class="aiops-report__state aiops-report__state--ready">
-        <FileCheck2 :size="15" aria-hidden="true" />已沉淀
-      </span>
-      <span v-else-if="isRunning" class="aiops-report__state aiops-report__state--running">
-        <FileClock :size="15" aria-hidden="true" />生成中
-      </span>
+      <div class="aiops-report__actions">
+        <span v-if="taskFailed" class="aiops-report__state aiops-report__state--failed">
+          <FileWarning :size="15" aria-hidden="true" />{{ report ? "失败后的降级报告" : "执行失败" }}
+        </span>
+        <span v-else-if="report" class="aiops-report__state aiops-report__state--ready">
+          <FileCheck2 :size="15" aria-hidden="true" />已沉淀
+        </span>
+        <span v-else-if="isRunning" class="aiops-report__state aiops-report__state--running">
+          <FileClock :size="15" aria-hidden="true" />生成中
+        </span>
+        <button
+          v-if="taskFailed && canRetry"
+          class="aiops-report__retry"
+          type="button"
+          :disabled="retrying"
+          @click="$emit('retry')"
+        >
+          <RotateCcw :size="15" aria-hidden="true" />
+          {{ retrying ? "正在重新执行" : "重试本次诊断" }}
+        </button>
+      </div>
     </header>
 
-    <article v-if="report" class="aiops-report__document">
+    <article v-if="report" class="aiops-report__document" :class="{ 'aiops-report__document--failed': taskFailed }">
       <div class="aiops-report__meta">
         <strong>{{ report.title }}</strong>
         <time v-if="report.createdAt" :datetime="report.createdAt">
@@ -58,19 +73,9 @@ defineEmits<{ retry: [] }>();
     </div>
 
     <div v-else-if="taskFailed" class="aiops-report__empty aiops-report__empty--failed">
-      <button
-        v-if="canRetry"
-        class="aiops-report__retry"
-        type="button"
-        :disabled="retrying"
-        @click="$emit('retry')"
-      >
-        <RotateCcw :size="15" aria-hidden="true" />
-        {{ retrying ? "正在重新执行" : "重试本次诊断" }}
-      </button>
       <FileWarning :size="22" aria-hidden="true" />
       <div>
-        <strong>本次诊断未沉淀报告</strong>
+        <strong>本次诊断未生成报告</strong>
         <p>诊断在报告持久化前失败，请查看下方过程和右侧工具证据后重新执行。</p>
       </div>
     </div>
@@ -87,13 +92,16 @@ defineEmits<{ retry: [] }>();
 
 <style scoped>
 .aiops-report { border-bottom: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: hidden; padding: 1.25rem; }
-.aiops-report__header { align-items: center; display: flex; justify-content: space-between; }
+.aiops-report__header { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
 .aiops-report__header p { color: var(--text-tertiary); font-size: 0.7rem; font-weight: 700; margin: 0 0 0.3rem; }
 .aiops-report__header h3 { font-size: 1rem; font-weight: 720; margin: 0; }
+.aiops-report__actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
 .aiops-report__state { align-items: center; border: 1px solid; display: inline-flex; font-size: 0.72rem; font-weight: 700; gap: 0.35rem; min-height: 2rem; padding: 0.25rem 0.55rem; }
 .aiops-report__state--ready { background: var(--status-success-bg); border-color: var(--status-success-border); color: var(--status-success-text); }
 .aiops-report__state--running { background: var(--status-running-bg); border-color: var(--status-running-border); color: var(--status-running-text); }
+.aiops-report__state--failed { background: var(--status-danger-bg); border-color: var(--status-danger-border); color: var(--status-danger-text); }
 .aiops-report__document { background: var(--surface-raised); border: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; margin-top: 1rem; min-height: 0; min-width: 0; overflow: hidden; }
+.aiops-report__document--failed { border-color: var(--status-danger-border); }
 .aiops-report__meta { align-items: baseline; border-bottom: 1px solid var(--line); display: flex; gap: 0.75rem; justify-content: space-between; padding: 0.8rem 1rem; }
 .aiops-report__meta strong { font-size: 0.84rem; font-weight: 700; }
 .aiops-report__meta time { color: var(--text-tertiary); font-size: 0.72rem; white-space: nowrap; }
@@ -105,7 +113,7 @@ defineEmits<{ retry: [] }>();
 .aiops-report__empty p { font-size: 0.78rem; line-height: 1.55; margin: 0.3rem 0 0; }
 .aiops-report__empty--running { background: var(--status-running-bg); border-color: var(--status-running-border); color: var(--status-running-text); }
 .aiops-report__empty--failed { background: var(--status-danger-bg); border-color: var(--status-danger-border); color: var(--status-danger-text); }
-.aiops-report__retry { align-items: center; background: var(--surface-raised); border: 1px solid currentColor; color: inherit; cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; font-weight: 700; gap: 0.4rem; min-height: 2.1rem; padding: 0.35rem 0.65rem; }
+.aiops-report__retry { align-items: center; background: var(--surface-raised); border: 1px solid var(--status-danger-border); color: var(--status-danger-text); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; font-size: 0.74rem; font-weight: 700; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.6rem; }
 .aiops-report__retry:disabled { cursor: wait; opacity: 0.6; }
-@media (max-width: 560px) { .aiops-report { padding: 1rem; } .aiops-report__meta { align-items: flex-start; flex-direction: column; } .aiops-report__meta time { white-space: normal; } }
+@media (max-width: 560px) { .aiops-report { padding: 1rem; } .aiops-report__header, .aiops-report__meta { align-items: flex-start; flex-direction: column; } .aiops-report__actions { justify-content: flex-start; } .aiops-report__meta time { white-space: normal; } }
 </style>

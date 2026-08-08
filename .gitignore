@@ -25,6 +25,7 @@ coverage/
 *.db
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+docs/aiops-uploads/
 config/project.json
 config/user.project.json
 

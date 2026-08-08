@@ -77,6 +77,7 @@ export default defineConfig({
   lang: "zh-CN",
   title: "Super AI WIKI",
   description: "Super AI 项目文档与 OpenSpec 变更记录",
+  srcExclude: ["aiops-uploads/**"],
   cleanUrls: true,
   themeConfig: {
     nav: [

@@ -27,7 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
-from super_ai.aiops import AiopsDiagnosticService, DiagnosisCasePersistor
+from super_ai.aiops import (
+    AiopsDiagnosticService,
+    DiagnosisCasePersistor,
+    redact_diagnostic_public_text,
+    redact_diagnostic_public_value,
+)
 from super_ai.alerts import (
     ActiveAlert,
     ActiveAlertProvider,
@@ -2532,8 +2537,8 @@ def _diagnostic_report_payload(
     return {
         "id": record.id,
         "title": record.title,
-        "content": record.content,
-        "payload": record.payload,
+        "content": redact_diagnostic_public_text(record.content),
+        "payload": redact_diagnostic_public_value(record.payload),
         "evidenceIds": list(evidence_ids),
         "createdAt": record.created_at.isoformat(),
     }

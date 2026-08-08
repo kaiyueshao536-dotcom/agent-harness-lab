@@ -6,6 +6,7 @@
 
 ## 当前版本
 
+- [P3.1：手工验收缺口闭环](p3.1-manual-acceptance-gap-closure.md)
 - [P0：工程展示底座](p0-engineering-foundation.md)
 - [P1：统一 Agent Trace](p1-unified-agent-trace.md)
 - [P2：自动评测 Harness](p2-agent-evaluation-harness.md)

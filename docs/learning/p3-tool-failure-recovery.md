@@ -37,6 +37,18 @@
 - 新 Trace ID 与失败 Trace 不同；
 - 旧失败 Job/Trace 仍可查询。
 
+### 3.1 先确认失败态真的可操作
+
+手工验收时不要只看“执行失败”四个字，还要确认：
+
+- 已经生成降级报告时仍显示“重试本次诊断”；
+- 报告明确标识为“失败后的降级报告”，不会被误认为成功产物；
+- 公开报告不显示 MCP URL、Topic ID、密钥或原始异常正文；
+- Trace 中 `SearchLog` 显示为 `↳`，它的 Attempt 显示为 `↳↳`；
+- 每个 Attempt 显示 `第 N/M 次尝试`，但不展示任意 attributes。
+
+如果 Alertmanager 可访问但返回 `[]`，正确状态是“当前告警源没有返回活跃告警”，不是“加载失败”。空结果和接口异常必须区分。
+
 ### 4. 用 Evaluation 证明修复
 
 创建一个 AIOps Case，至少加入：
@@ -60,6 +72,19 @@
 | Attempt Span 数 |  |  |
 | Gate | 失败 |  |
 | 最重要的证据 |  |  |
+
+## 本次真实验收样例
+
+| 项目 | 失败执行 | 恢复执行 |
+| --- | --- | --- |
+| Diagnostic Task ID | `diagnostic_8d165d…` | 同一 Task |
+| Job ID | `job_881d79…` | `job_575bc4…` |
+| retryOfJobId | 无 | 指向 `job_881d79…` |
+| Trace ID | `trace_ba4503…` | `trace_3bac50…` |
+| Trace 状态 | failed | succeeded |
+| Trace 耗时 | 69,436 ms | 85,571 ms |
+
+这组数据说明重试没有覆盖旧失败记录，而是生成了新的恢复证据。完整复盘见 [`P3.1 版本记录`](../version-history/p3.1-manual-acceptance-gap-closure.md)。
 
 ## 常见追问
 

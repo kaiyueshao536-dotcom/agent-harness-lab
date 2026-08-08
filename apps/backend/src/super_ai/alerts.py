@@ -136,7 +136,11 @@ def build_alertmanager_alert_provider(
         sources = config.get("sources")
         if not isinstance(sources, list) or not sources:
             raise ProjectConfigurationError("At least one alert source must be configured.")
-        configured_sources = cast(list[object], sources)
+        configured_sources = [
+            source for source in cast(list[object], sources) if _source_enabled(source)
+        ]
+        if not configured_sources:
+            raise ProjectConfigurationError("At least one alert source must be enabled.")
         providers = tuple(
             _build_alert_provider(source, timeout_seconds=timeout_seconds)
             for source in configured_sources
@@ -144,6 +148,16 @@ def build_alertmanager_alert_provider(
     except ProjectConfigurationError as exc:
         raise AlertProviderError("The configured alert provider is invalid.") from exc
     return AggregatedAlertProvider(providers=providers)
+
+
+def _source_enabled(source: object) -> bool:
+    if not isinstance(source, Mapping):
+        raise ProjectConfigurationError("Alert source must be an object.")
+    source_mapping = cast(Mapping[str, object], source)
+    enabled: object = source_mapping.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ProjectConfigurationError("Alert source enabled must be a boolean.")
+    return enabled
 
 
 def _build_alert_provider(source: object, *, timeout_seconds: float) -> ActiveAlertProvider:

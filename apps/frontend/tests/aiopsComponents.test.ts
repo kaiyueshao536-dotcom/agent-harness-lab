@@ -127,6 +127,31 @@ describe("AIOps components", () => {
     expect(wrapper.emitted("retry")).toEqual([[]]);
   });
 
+  it("keeps the retry action visible when a failed diagnosis has a degraded report", async () => {
+    const wrapper = mount(AiopsReportPanel, {
+      props: {
+        report: {
+          id: "report_failed",
+          title: "告警分析报告",
+          content: "# 告警分析报告\n\n证据不足，无法确认根因。",
+          createdAt: "2026-08-08T00:00:02.000Z"
+        },
+        isRunning: false,
+        hasTask: true,
+        taskFailed: true,
+        canRetry: true,
+        retrying: false
+      }
+    });
+
+    expect(wrapper.text()).toContain("失败后的降级报告");
+    expect(wrapper.text()).not.toContain("已沉淀");
+    expect(wrapper.text()).toContain("证据不足，无法确认根因");
+    const retry = wrapper.get("button.aiops-report__retry");
+    await retry.trigger("click");
+    expect(wrapper.emitted("retry")).toEqual([[]]);
+  });
+
   it("lists a server-backed diagnosis case and selects its task", async () => {
     const longSummary = `# 告警分析报告\n\n${"长报告内容".repeat(80)}`;
     const wrapper = mount(AiopsCaseLibrary, {

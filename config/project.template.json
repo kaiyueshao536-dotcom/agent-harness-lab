@@ -77,6 +77,7 @@
     "sources": [
       {
         "id": "external-test-prometheus",
+        "enabled": false,
         "type": "prometheus-v1",
         "alertsApi": "",
         "username": "",
@@ -84,6 +85,7 @@
       },
       {
         "id": "local-alertmanager",
+        "enabled": true,
         "type": "alertmanager-v2",
         "alertsApi": "http://127.0.0.1:9093/api/v2/alerts"
       }

@@ -25,7 +25,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **RAG**：Markdown/PDF 切分，Milvus 向量检索与 BM25L 并行召回，RRF 融合、Qwen rerank 和可解释排名。
 - **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
 - **自动评测 Harness**：不可变版本数据集把真实 Trace 绑定到确定性质量规则，生成逐案例检查、聚合指标、质量门禁和同数据集基线差异；离线 CLI 与 CI 无需模型或云服务密钥。
-- **工具失败恢复闭环**：MCP 连接重试以 `Tool → Attempt` 父子 Span 留痕；失败诊断可关联原 Job 重新执行，保留旧 Job/Trace，并用同一评测数据集验证恢复结果。
+- **工具失败恢复闭环**：MCP 连接重试以 `Tool → Attempt` 父子 Span 留痕；时间线显示父子层级、尝试序号和错误类别；失败诊断即使已有降级报告也可关联原 Job 重试，保留旧 Job/Trace，并用同一评测数据集验证恢复结果。
 - **工程治理**：FastAPI/Pydantic v2、Vue 3/TypeScript、SQLite/Alembic、用户认证与 tenant 隔离、运行状态检查、OpenSpec 变更流程、无密钥 CI。
 
 ## 架构
@@ -158,6 +158,7 @@ uv run pytest
 - 密码使用 Argon2 哈希，不存储明文。
 - 聊天、知识、向量、MCP、AIOps、反馈和审计数据按当前用户与 tenant 作用域访问。
 - Trace 列表与详情同样按当前用户隔离；只保存安全摘要、状态、耗时和结构化标识，不保存完整提示词、思维链、模型密钥或原始工具凭据。
+- 面向普通用户的诊断报告和嵌套 payload 在 API 输出前统一隐藏内部连接地址、CLS Topic ID 和密钥模式；原始工具错误只进入受权限控制的 Tool Audit。
 - 评测数据集、运行和结果按当前用户隔离；结果仅保存最多 500 字符的输出摘要、指标和规则检查，不复制完整提示词、思维链或原始工具输入输出。
 - Milvus 记录 owner/user/tenant 元数据，检索时强制加入权限过滤。
 - 应用只读取本地 JSON 项目配置，不从 `.env` 或机器环境变量加载业务密钥。

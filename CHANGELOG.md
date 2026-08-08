@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P3.1 | 2026-08-08 | 手工验收缺口闭环 | 以不可变 Tag 指向为准 | [`p3.1-manual-acceptance-gap-closure`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.1-manual-acceptance-gap-closure) | [P3.1 复盘](docs/version-history/p3.1-manual-acceptance-gap-closure.md) |
 | P3 | 2026-08-08 | Trace 驱动的外部工具失败恢复闭环 | 以不可变 Tag 指向为准 | [`p3-trace-driven-tool-failure-recovery`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3-trace-driven-tool-failure-recovery) | [P3 复盘](docs/version-history/p3-trace-driven-tool-failure-recovery.md) |
 | P2 | 2026-08-08 | 自动评测 Harness | [`f58cf18`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/f58cf18d815f66977ab3de7a2e62aca61733e128) | [`p2-agent-evaluation-harness`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p2-agent-evaluation-harness) | [P2 复盘](docs/version-history/p2-agent-evaluation-harness.md) |
 | P1 | 2026-08-06 | 统一 Agent Trace | [`e3e7aac`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/commit/e3e7aac9f009d37b4f5bc4f21007e05747f6c0a1) | [`p1-unified-agent-trace`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p1-unified-agent-trace) | [P1 复盘](docs/version-history/p1-unified-agent-trace.md) |
@@ -17,6 +18,14 @@
 - 建立版本复盘制度，补齐 P0、P1、P2 的详细复盘文档与统一模板。
 - 修复 AIOps Tool Span 在缓冲 SSE 消费阶段才创建、耗时不能代表真实调用边界的问题。
 - 新增 MCP Attempt、关联 Job 重试、失败/恢复 Trace 评测与无密钥 P3 fixture。
+
+## P3.1 手工验收闭环
+
+- 失败任务即使已有降级报告，也保留“重试本次诊断”入口。
+- Trace 时间线根据 `parentSpanId` 展示 Tool/Attempt 层级、尝试序号、上限和错误类别。
+- 统一公开报告序列化边界，历史内容在返回浏览器前脱敏内部 URL、Topic ID 和密钥模式。
+- 禁用的告警源不再阻断已启用的本地 Alertmanager；空告警返回正常空状态。
+- 真实重试保留旧失败 Job/Trace，并创建关联的成功 Job 与成功 Trace。
 
 ## 维护规则
 

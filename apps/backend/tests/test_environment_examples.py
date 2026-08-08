@@ -74,6 +74,8 @@ def test_project_template_declares_supported_alert_source_types() -> None:
     sources = config["prometheusAlerts"]["sources"]
 
     assert sources[0]["type"] == "prometheus-v1"
+    assert sources[0]["enabled"] is False
     assert sources[0]["alertsApi"] == ""
     assert sources[1]["type"] == "alertmanager-v2"
+    assert sources[1]["enabled"] is True
     assert sources[1]["alertsApi"] == "http://127.0.0.1:9093/api/v2/alerts"
