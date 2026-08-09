@@ -5,6 +5,7 @@
 ## 当前记录
 
 - [P0—P2 亲手跑通与 MCP 故障演练](p0-p2-hands-on-walkthrough.md)
+- [Chat 记忆真实审计：长对话压缩、约束与污染](chat-memory-real-audit-2026-08-09.md)
 
 ## 记录原则
 

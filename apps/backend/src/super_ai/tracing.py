@@ -25,6 +25,7 @@ SPAN_KINDS: Final = frozenset(
         "retrieval",
         "model",
         "report",
+        "memory",
     }
 )
 _SENSITIVE_KEYS: Final = frozenset(

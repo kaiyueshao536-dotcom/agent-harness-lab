@@ -291,6 +291,13 @@ class ChatSessionModel(Base):
     last_compacted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    memory_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    memory_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    memory_status: Mapped[str] = mapped_column(String(40), nullable=False, default="idle")
+    memory_error_category: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    last_memory_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

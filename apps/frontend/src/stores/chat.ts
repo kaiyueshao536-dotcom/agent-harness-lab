@@ -6,6 +6,7 @@ import type {
   ChatAssemblyConfigurationResponse,
   ChatSessionSummary,
   ChatMemoryMode,
+  MemoryStageSseEvent,
   ReferenceSourceSseEvent,
   ToolCallAudit
 } from "@agent-py/api-contracts";
@@ -40,6 +41,7 @@ export const useChatStore = defineStore("chat", () => {
   const toolAudits = ref<readonly ToolCallAudit[]>([]);
   const liveToolCalls = ref<readonly LiveToolCall[]>([]);
   const references = ref<readonly ChatReference[]>([]);
+  const memoryStage = ref<MemoryStageSseEvent["memory"] | null>(null);
   const isLoading = ref(false);
   const isSending = ref(false);
   const isUpdatingMemory = ref(false);
@@ -94,6 +96,7 @@ export const useChatStore = defineStore("chat", () => {
     toolAudits.value = [];
     liveToolCalls.value = [];
     references.value = [];
+    memoryStage.value = null;
     errorMessage.value = null;
     configuration.value = null;
     isSavingConfiguration.value = false;
@@ -112,6 +115,7 @@ export const useChatStore = defineStore("chat", () => {
     isSending,
     isUpdatingMemory,
     liveToolCalls,
+    memoryStage,
     messages,
     references,
     sessions,
@@ -298,8 +302,9 @@ export const useChatStore = defineStore("chat", () => {
         reportError(new Error("上下文已达到 95%，请执行手动压缩后再继续对话。"));
         return;
       }
+      let targetSessionId: string | null = activeSessionId.value;
       try {
-        const targetSessionId = activeSessionId.value ?? (await createNewSession(client, upsertSession));
+        targetSessionId ??= await createNewSession(client, upsertSession);
         if (activeSessionId.value === null) {
           activeSessionId.value = targetSessionId;
         }
@@ -326,6 +331,9 @@ export const useChatStore = defineStore("chat", () => {
           if (event.type === "tool.call") {
             updateLiveToolCall(event.toolCall, liveToolCalls);
           }
+          if (event.type === "memory.stage") {
+            memoryStage.value = event.memory;
+          }
           if (event.type === "error") {
             throw new ApiClientError(event.error);
           }
@@ -339,6 +347,49 @@ export const useChatStore = defineStore("chat", () => {
         await Promise.all([loadSession(targetSessionId), reloadSessions()]);
       } catch (error) {
         messages.value = messages.value.filter((item) => !item.id.startsWith("message_draft_"));
+        if (targetSessionId !== null) {
+          await loadSession(targetSessionId).catch(() => undefined);
+        }
+        reportError(error);
+        throw error;
+      } finally {
+        isSending.value = false;
+        liveToolCalls.value = [];
+      }
+    },
+    retryFailedMemory: async (messageId: string): Promise<void> => {
+      const sessionId = activeSessionId.value;
+      if (sessionId === null || isSending.value) return;
+      isSending.value = true;
+      errorMessage.value = null;
+      const draftId = `message_draft_retry_${Date.now()}`;
+      let finished = false;
+      try {
+        for await (const event of client.retryMessage(sessionId, messageId)) {
+          if (event.type === "memory.stage") memoryStage.value = event.memory;
+          if (event.type === "content.delta") {
+            for (const character of event.delta) {
+              updateAssistantDraft(sessionId, draftId, character, messages);
+              await waitForTypewriterTick();
+            }
+          }
+          if (event.type === "reasoning.delta") {
+            updateAssistantReasoning(sessionId, draftId, event.delta, messages);
+          }
+          if (event.type === "reference.source") {
+            references.value = uniqueReferences([...references.value, event.reference]);
+          }
+          if (event.type === "tool.call") {
+            updateLiveToolCall(event.toolCall, liveToolCalls);
+          }
+          if (event.type === "error") throw new ApiClientError(event.error);
+          if (event.type === "complete") finished = true;
+        }
+        if (!finished) throw new Error("重试流在完成前意外中断。");
+        await Promise.all([loadSession(sessionId), reloadSessions()]);
+      } catch (error) {
+        messages.value = messages.value.filter((item) => item.id !== draftId);
+        await loadSession(sessionId).catch(() => undefined);
         reportError(error);
         throw error;
       } finally {

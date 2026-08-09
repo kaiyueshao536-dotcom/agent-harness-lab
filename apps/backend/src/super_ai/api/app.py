@@ -57,6 +57,7 @@ from super_ai.chat.configuration import (
 from super_ai.chat.memory import (
     SUPPORTED_CHAT_MEMORY_MODES,
     ChatContextLimitReached,
+    ChatMemoryPreparationError,
     ChatMemoryService,
     memory_payload,
 )
@@ -134,6 +135,7 @@ from super_ai.observability import (
 )
 from super_ai.project_config import project_config_section, required_int, required_str
 from super_ai.retrieval import KnowledgeRetrievalTool, RetrievalVectorStore
+from super_ai.tracing import AgentTraceService
 from super_ai.vector_store import (
     MilvusHealthCheckResult,
     build_default_milvus_vector_store,
@@ -1252,13 +1254,41 @@ def create_app(
             owner_user_id=user.id, session_id=session_id
         )
         service, prompt = await _chat_memory_context(request, owner_user_id=user.id)
-        updated = await service.set_mode(
-            owner_user_id=user.id,
-            session=session,
-            mode=body.mode,
-            history=history,
-            system_prompt=prompt,
-        )
+        trace_service = AgentTraceService(repositories.agent_traces)
+        trace = None
+        if body.mode == "manual":
+            trace = await trace_service.start_trace(
+                owner_user_id=user.id,
+                execution_type="chat",
+                resource_type="chat_session",
+                resource_id=session.id,
+                request_id=getattr(request.state, "request_id", None),
+                metadata={"entrypoint": "memory-mode", "mode": body.mode},
+            )
+        try:
+            updated = await service.set_mode(
+                owner_user_id=user.id,
+                session=session,
+                mode=body.mode,
+                history=history,
+                system_prompt=prompt,
+                trace_context=trace,
+            )
+        except Exception as exc:
+            if trace is not None:
+                await trace_service.finalize_trace(
+                    trace,
+                    status="failed",
+                    summary="Manual Chat memory compaction failed",
+                    error_category=exc.__class__.__name__,
+                )
+            raise
+        if trace is not None:
+            await trace_service.finalize_trace(
+                trace,
+                status="succeeded",
+                summary="Manual Chat memory compaction completed",
+            )
         return success_response(
             request, _chat_session_payload(updated, service.context_window_tokens)
         )
@@ -1277,11 +1307,35 @@ def create_app(
             owner_user_id=user.id, session_id=session_id
         )
         service, prompt = await _chat_memory_context(request, owner_user_id=user.id)
-        updated = await service.compact(
+        trace_service = AgentTraceService(repositories.agent_traces)
+        trace = await trace_service.start_trace(
             owner_user_id=user.id,
-            session=session,
-            history=history,
-            system_prompt=prompt,
+            execution_type="chat",
+            resource_type="chat_session",
+            resource_id=session.id,
+            request_id=getattr(request.state, "request_id", None),
+            metadata={"entrypoint": "memory-compact"},
+        )
+        try:
+            updated = await service.compact(
+                owner_user_id=user.id,
+                session=session,
+                history=history,
+                system_prompt=prompt,
+                trace_context=trace,
+            )
+        except Exception as exc:
+            await trace_service.finalize_trace(
+                trace,
+                status="failed",
+                summary="Manual Chat memory compaction failed",
+                error_category=exc.__class__.__name__,
+            )
+            raise
+        await trace_service.finalize_trace(
+            trace,
+            status="succeeded",
+            summary="Manual Chat memory compaction completed",
         )
         return success_response(
             request, _chat_session_payload(updated, service.context_window_tokens)
@@ -1301,29 +1355,89 @@ def create_app(
         )
         if session is None:
             raise ApiErrorException("AUTH_FORBIDDEN")
+        history = await repositories.chat.list_messages(
+            owner_user_id=user.id,
+            session_id=session.id,
+        )
+        message_metadata = dict(body.metadata)
         if body.role == "user":
-            history = await repositories.chat.list_messages(
-                owner_user_id=user.id, session_id=session.id
-            )
-            service, prompt = await _chat_memory_context(request, owner_user_id=user.id)
-            try:
-                await service.prepare_message(
-                    owner_user_id=user.id,
-                    session=session,
-                    history=history,
-                    system_prompt=prompt,
-                    content=body.content,
-                )
-            except ChatContextLimitReached as exc:
-                raise ApiErrorException("CHAT_CONTEXT_LIMIT_REACHED") from exc
+            message_metadata["memoryPreparationStatus"] = "pending"
+            message_metadata["memoryAttemptCount"] = 1
         message = await repositories.chat.append_message(
             owner_user_id=user.id,
             message_id=f"message_{uuid4().hex}",
             session_id=session.id,
             role=body.role,
             content=body.content,
-            metadata=body.metadata,
+            metadata=message_metadata,
         )
+        if body.role == "user":
+            service, prompt = await _chat_memory_context(request, owner_user_id=user.id)
+            trace_service = AgentTraceService(repositories.agent_traces)
+            trace = await trace_service.start_trace(
+                owner_user_id=user.id,
+                execution_type="chat",
+                resource_type="chat_session",
+                resource_id=session.id,
+                request_id=getattr(request.state, "request_id", None),
+                metadata={"messageId": message.id, "entrypoint": "append"},
+            )
+            try:
+                await service.prepare_message(
+                    owner_user_id=user.id,
+                    session=session,
+                    history=history,
+                    system_prompt=prompt,
+                    candidate_message=message,
+                    trace_context=trace,
+                )
+            except (ChatContextLimitReached, ChatMemoryPreparationError) as exc:
+                error_category = (
+                    "ChatContextLimitReached"
+                    if isinstance(exc, ChatContextLimitReached)
+                    else exc.error_category
+                )
+                message_metadata.update(
+                    {
+                        "memoryPreparationStatus": "failed",
+                        "memoryErrorCategory": error_category,
+                        "memoryTraceId": trace.trace_id,
+                    }
+                )
+                message = (
+                    await repositories.chat.update_message_metadata(
+                        owner_user_id=user.id,
+                        session_id=session.id,
+                        message_id=message.id,
+                        metadata=message_metadata,
+                    )
+                ) or message
+                await trace_service.finalize_trace(
+                    trace,
+                    status="failed",
+                    summary="Chat memory preparation failed",
+                    error_category=error_category,
+                )
+            else:
+                message_metadata.update(
+                    {
+                        "memoryPreparationStatus": "succeeded",
+                        "memoryTraceId": trace.trace_id,
+                    }
+                )
+                message = (
+                    await repositories.chat.update_message_metadata(
+                        owner_user_id=user.id,
+                        session_id=session.id,
+                        message_id=message.id,
+                        metadata=message_metadata,
+                    )
+                ) or message
+                await trace_service.finalize_trace(
+                    trace,
+                    status="succeeded",
+                    summary="Chat memory preparation completed",
+                )
         updated_session = await _maybe_generate_chat_title(
             repositories,
             user_id=user.id,
@@ -1366,6 +1480,42 @@ def create_app(
                 session=session,
                 content=body.content,
                 metadata=body.metadata,
+                accessible_knowledge_base_ids=_accessible_knowledge_base_ids(user),
+                request_id=getattr(request.state, "request_id", None),
+            ):
+                yield encode_sse(event)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.post("/chat/sessions/{session_id}/messages/{message_id}:retry")
+    async def retry_chat_message(
+        request: Request,
+        session_id: str,
+        message_id: str,
+        user: Annotated[UserRecord, Depends(_current_user)],
+    ) -> StreamingResponse:
+        repositories = _memory_repositories(request)
+        session = await repositories.chat.get_session(
+            owner_user_id=user.id,
+            session_id=session_id,
+        )
+        if session is None:
+            raise ApiErrorException("AUTH_FORBIDDEN")
+        service = ChatStreamingService(
+            repositories=repositories,
+            agent_runner=_chat_agent_runner(request),
+            memory_service=_chat_memory_service(request),
+        )
+
+        async def event_stream() -> AsyncIterator[str]:
+            async for event in service.retry_message(
+                owner_user_id=user.id,
+                session=session,
+                message_id=message_id,
                 accessible_knowledge_base_ids=_accessible_knowledge_base_ids(user),
                 request_id=getattr(request.state, "request_id", None),
             ):
@@ -2180,10 +2330,12 @@ def _context_window_tokens(request: Request) -> int:
 
 
 def _chat_memory_service(request: Request) -> ChatMemoryService:
+    repositories = _memory_repositories(request)
     return ChatMemoryService(
-        repositories=_memory_repositories(request),
+        repositories=repositories,
         llm_provider=_llm_provider(request),
         context_window_tokens=_context_window_tokens(request),
+        trace_service=AgentTraceService(repositories.agent_traces),
     )
 
 

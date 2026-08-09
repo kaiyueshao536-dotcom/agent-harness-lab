@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -8,7 +9,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from super_ai.chat.memory import ChatContextLimitReached, ChatMemoryService
+from super_ai.chat.memory import (
+    ChatContextLimitReached,
+    ChatMemoryPreparationError,
+    ChatMemoryService,
+)
 from super_ai.llm import LlmProvider
 from super_ai.memory.database import create_memory_engine, create_memory_session_factory
 from super_ai.memory.sqlite import create_sqlite_memory_repositories
@@ -25,7 +30,10 @@ class FakeChatModel:
 
     async def ainvoke(self, input: object) -> object:
         self.inputs.append(input)
-        return FakeMessage("用户正在排查 API；已确认需要保留工具结果和后续任务。")
+        return FakeMessage(
+            '{"schemaVersion":1,"activeConstraints":[],"supersededFacts":[],'
+            '"decisions":[],"preferences":[],"openTasks":[],"evidenceRefs":[]}'
+        )
 
 
 class FakeProvider:
@@ -33,6 +41,24 @@ class FakeProvider:
         self.model = FakeChatModel()
 
     def create_chat_model(self) -> FakeChatModel:
+        return self.model
+
+
+class SlowChatModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def ainvoke(self, _input: object) -> object:
+        self.calls += 1
+        await asyncio.sleep(0.05)
+        return FakeMessage("{}")
+
+
+class SlowProvider:
+    def __init__(self) -> None:
+        self.model = SlowChatModel()
+
+    def create_chat_model(self) -> SlowChatModel:
         return self.model
 
 
@@ -202,3 +228,79 @@ async def test_hard_limit_rejects_candidate_without_persisting_it(
         await engine.dispose()
 
     assert history == []
+
+
+@pytest.mark.asyncio
+async def test_memory_timeout_is_bounded_and_does_not_advance_snapshot(
+    migrated_database_url: str,
+) -> None:
+    engine = create_memory_engine(migrated_database_url)
+    try:
+        repositories = create_sqlite_memory_repositories(
+            create_memory_session_factory(engine)
+        )
+        session = await repositories.chat.create_session(
+            owner_user_id="user-a",
+            session_id="chat-timeout",
+        )
+        await repositories.chat.update_memory_state(
+            owner_user_id="user-a",
+            session_id=session.id,
+            memory_snapshot={
+                "schemaVersion": 1,
+                "activeConstraints": [],
+                "supersededFacts": [],
+                "decisions": [],
+                "preferences": [],
+                "openTasks": [],
+                "evidenceRefs": [],
+            },
+            memory_version=3,
+            memory_status="succeeded",
+        )
+        await repositories.chat.append_message(
+            owner_user_id="user-a",
+            message_id="message-before-timeout",
+            session_id=session.id,
+            role="user",
+            content="需要保留的约束",
+        )
+        current = await repositories.chat.get_session(
+            owner_user_id="user-a",
+            session_id=session.id,
+        )
+        history = await repositories.chat.list_messages(
+            owner_user_id="user-a",
+            session_id=session.id,
+        )
+        assert current is not None
+        provider = SlowProvider()
+        service = ChatMemoryService(
+            repositories=repositories,
+            llm_provider=cast(LlmProvider, provider),
+            context_window_tokens=131072,
+            compression_timeout_seconds=0.001,
+            compression_max_attempts=2,
+        )
+
+        with pytest.raises(ChatMemoryPreparationError) as raised:
+            await service.compact(
+                owner_user_id="user-a",
+                session=current,
+                history=history,
+                system_prompt="你是助手。",
+            )
+        failed = await repositories.chat.get_session(
+            owner_user_id="user-a",
+            session_id=session.id,
+        )
+    finally:
+        await engine.dispose()
+
+    assert raised.value.error_category == "TimeoutError"
+    assert provider.model.calls == 2
+    assert failed is not None
+    assert failed.memory_status == "failed"
+    assert failed.memory_version == 3
+    assert failed.compacted_message_count == 0
+    assert failed.memory_snapshot == current.memory_snapshot

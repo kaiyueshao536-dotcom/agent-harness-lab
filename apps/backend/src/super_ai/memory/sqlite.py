@@ -127,6 +127,12 @@ class SQLiteChatMemoryRepository:
         compacted_message_count: int | None = None,
         context_tokens: int | None = None,
         last_compacted_at: datetime | None = None,
+        memory_snapshot: JsonDict | None = None,
+        memory_version: int | None = None,
+        memory_status: str | None = None,
+        memory_error_category: str | None = None,
+        last_memory_attempt_at: datetime | None = None,
+        clear_memory_error: bool = False,
         clear_compaction: bool = False,
         updated_at: datetime | None = None,
     ) -> ChatSessionRecord | None:
@@ -142,6 +148,11 @@ class SQLiteChatMemoryRepository:
                 row.compacted_message_count = 0
                 row.context_tokens = 0
                 row.last_compacted_at = None
+                row.memory_snapshot = None
+                row.memory_version = 0
+                row.memory_status = "idle"
+                row.memory_error_category = None
+                row.last_memory_attempt_at = None
             else:
                 if memory_summary is not None:
                     row.memory_summary = memory_summary
@@ -151,9 +162,42 @@ class SQLiteChatMemoryRepository:
                     row.context_tokens = context_tokens
                 if last_compacted_at is not None:
                     row.last_compacted_at = last_compacted_at
+                if memory_snapshot is not None:
+                    row.memory_snapshot = memory_snapshot
+                if memory_version is not None:
+                    row.memory_version = memory_version
+                if memory_status is not None:
+                    row.memory_status = memory_status
+                if clear_memory_error:
+                    row.memory_error_category = None
+                elif memory_error_category is not None:
+                    row.memory_error_category = memory_error_category
+                if last_memory_attempt_at is not None:
+                    row.last_memory_attempt_at = last_memory_attempt_at
             row.updated_at = timestamp
             await session.commit()
         return _chat_session_record(row)
+
+    async def update_message_metadata(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        message_id: str,
+        metadata: JsonDict,
+    ) -> ChatMessageRecord | None:
+        stmt = select(ChatMessageModel).where(
+            ChatMessageModel.id == message_id,
+            ChatMessageModel.owner_user_id == owner_user_id,
+            ChatMessageModel.session_id == session_id,
+        )
+        async with self._session_factory() as session:
+            row = (await session.scalars(stmt)).one_or_none()
+            if row is None:
+                return None
+            row.metadata_json = metadata
+            await session.commit()
+        return _chat_message_record(row)
 
     async def list_sessions(
         self,
@@ -1800,6 +1844,17 @@ def _chat_session_record(row: ChatSessionModel) -> ChatSessionRecord:
         context_tokens=row.context_tokens,
         last_compacted_at=(
             _ensure_utc(row.last_compacted_at) if row.last_compacted_at is not None else None
+        ),
+        memory_snapshot=(
+            _json_dict(row.memory_snapshot) if row.memory_snapshot is not None else None
+        ),
+        memory_version=row.memory_version,
+        memory_status=row.memory_status,
+        memory_error_category=row.memory_error_category,
+        last_memory_attempt_at=(
+            _ensure_utc(row.last_memory_attempt_at)
+            if row.last_memory_attempt_at is not None
+            else None
         ),
     )
 

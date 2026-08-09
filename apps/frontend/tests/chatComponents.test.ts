@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, ChatSessionSummary, ToolCallAudit } from "@agent-py/api-contracts";
 
 import ChatComposer from "../src/components/ChatComposer.vue";
+import ChatMemoryInspector from "../src/components/ChatMemoryInspector.vue";
 import ChatSessionList from "../src/components/ChatSessionList.vue";
 import ChatTranscript from "../src/components/ChatTranscript.vue";
 import RetrievalStageTrace from "../src/components/RetrievalStageTrace.vue";
@@ -33,7 +34,20 @@ const sessions: readonly ChatSessionSummary[] = [
       contextUsagePercent: 0.9,
       compactedMessageCount: 0,
       lastCompactedAt: null,
-      canCompact: true
+    canCompact: true,
+    version: 0,
+    status: "idle",
+    errorCategory: null,
+    lastAttemptAt: null,
+    snapshot: {
+      schemaVersion: 1,
+      activeConstraints: [],
+      supersededFacts: [],
+      decisions: [],
+      preferences: [],
+      openTasks: [],
+      evidenceRefs: []
+    }
     }
   }
 ];
@@ -211,5 +225,50 @@ describe("chat components", () => {
     expect(wrapper.text()).toContain("向量未召回");
     expect(wrapper.text()).toContain("BM25#1 · 8.630");
     expect(wrapper.text()).toContain("精排#2 · 91%");
+  });
+
+  it("shows grounded memory, superseded facts, and retries the failed message", async () => {
+    const failed: ChatMessage = {
+      id: "message_failed",
+      ownerUserId: "user_1",
+      sessionId: "chat_1",
+      role: "user",
+      content: "以 5s 为准",
+      metadata: { memoryPreparationStatus: "failed" },
+      createdAt: "2026-08-09T00:00:00.000Z"
+    };
+    const wrapper = mount(ChatMemoryInspector, {
+      props: {
+        disabled: false,
+        memory: {
+          ...sessions[0]!.memory,
+          version: 2,
+          status: "failed",
+          errorCategory: "TimeoutError",
+          snapshot: {
+            ...sessions[0]!.memory.snapshot,
+            activeConstraints: [
+              { key: "超时阈值", value: "超时阈值=5s", sourceMessageId: "message_new" }
+            ],
+            supersededFacts: [
+              {
+                key: "超时阈值",
+                value: "超时阈值=30s",
+                sourceMessageId: "message_old",
+                supersededByMessageId: "message_new"
+              }
+            ]
+          }
+        },
+        messages: [failed],
+        stage: null
+      }
+    });
+
+    expect(wrapper.text()).toContain("记忆 v2");
+    expect(wrapper.text()).toContain("有效约束 1 条");
+    expect(wrapper.text()).toContain("已废止 1 条");
+    await wrapper.get("button").trigger("click");
+    expect(wrapper.emitted("retry")).toEqual([["message_failed"]]);
   });
 });

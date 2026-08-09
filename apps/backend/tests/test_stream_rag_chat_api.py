@@ -195,7 +195,11 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
     assert stream_response.status_code == 200
     assert stream_response.headers["content-type"].startswith("text/event-stream")
     events = _parse_sse(stream_response.text)
-    assert [event["event"] for event in events[:4]] == [
+    assert [event["event"] for event in events[:2]] == ["memory.stage", "memory.stage"]
+    assert events[0]["data"]["memory"]["status"] == "running"
+    assert events[1]["data"]["memory"]["status"] == "succeeded"
+    agent_events = [event for event in events if event["event"] != "memory.stage"]
+    assert [event["event"] for event in agent_events[:4]] == [
         "reasoning.delta",
         "tool.call",
         "tool.call",
@@ -203,13 +207,13 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
     ]
     assert events[-1]["event"] == "complete"
     assert len({event["data"]["traceId"] for event in events}) == 1
-    assert events[1]["data"]["spanId"].startswith("span_")
-    assert events[1]["data"]["spanId"] == events[2]["data"]["spanId"]
-    assert events[0]["data"]["delta"] == "I will check the runbook first."
-    assert events[1]["data"]["toolCall"]["status"] == "started"
-    assert events[3]["data"]["reference"]["chunkId"] == "chunk_1"
-    assert events[3]["data"]["reference"]["knowledgeType"] == "sop"
-    assert events[3]["data"]["reference"]["excerpt"] == (
+    assert agent_events[1]["data"]["spanId"].startswith("span_")
+    assert agent_events[1]["data"]["spanId"] == agent_events[2]["data"]["spanId"]
+    assert agent_events[0]["data"]["delta"] == "I will check the runbook first."
+    assert agent_events[1]["data"]["toolCall"]["status"] == "started"
+    assert agent_events[3]["data"]["reference"]["chunkId"] == "chunk_1"
+    assert agent_events[3]["data"]["reference"]["knowledgeType"] == "sop"
+    assert agent_events[3]["data"]["reference"]["excerpt"] == (
         "Restart the API by applying the approved runbook."
     )
     content_events = [event for event in events if event["event"] == "content.delta"]
@@ -243,7 +247,9 @@ async def test_streaming_chat_emits_sse_events_and_persists_messages(
     assert traces[0].status == "succeeded"
     assert traces[0].request_id == "chat-observe"
     assert [span.kind for span in spans].count("tool") == 1
-    assert spans[0].kind == "agent"
+    assert spans[0].kind == "memory"
+    assert spans[0].name == "chat.memory.prepare"
+    assert any(span.kind == "agent" and span.name == "chat.agent" for span in spans)
     agent_events = [
         json.loads(record.message)
         for record in caplog.records
@@ -529,8 +535,12 @@ async def test_streaming_chat_emits_safe_error_without_partial_assistant_message
     assert response.status_code == 200
     assert "sk-secret" not in response.text
     events = _parse_sse(response.text)
-    assert all(event["event"] == "content.delta" for event in events[:-1])
-    assert "".join(event["data"]["delta"] for event in events[:-1]) == "partial secret"
+    content_events = [event for event in events if event["event"] == "content.delta"]
+    assert "".join(event["data"]["delta"] for event in content_events) == "partial secret"
+    assert [event["data"]["memory"]["status"] for event in events[:2]] == [
+        "running",
+        "succeeded",
+    ]
     assert events[-1]["event"] == "error"
     assert events[-1]["data"]["error"]["code"] == "SYSTEM_INTERNAL_ERROR"
     assert events[-1]["data"]["traceId"] == traces[0].id
@@ -575,6 +585,60 @@ async def test_streaming_chat_emits_error_when_assistant_persistence_fails() -> 
     error_payload = cast(dict[str, Any], events[-1]["error"])
     assert error_payload["code"] == "SYSTEM_INTERNAL_ERROR"
     assert [message.role for message in chat_repository.messages] == ["user"]
+
+
+@pytest.mark.asyncio
+async def test_failed_memory_message_retry_reuses_id_and_is_owner_scoped(
+    migrated_database_url: str,
+) -> None:
+    runner = FakeChatAgentRunner(events=[ChatAgentContentDelta("恢复成功")])
+    app = create_app(database_url=migrated_database_url, chat_agent_runner=runner)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        owner = await _register(client, "memory-retry@example.com", "Memory Retry")
+        other = await _register(client, "memory-other@example.com", "Memory Other")
+        owner_headers = _auth_headers(owner["accessToken"])
+        session = (
+            await client.post("/chat/sessions", headers=owner_headers, json={})
+        ).json()["data"]
+        message = await app.state.memory_repositories.chat.append_message(
+            owner_user_id=owner["user"]["id"],
+            message_id="message_retry_same",
+            session_id=session["id"],
+            role="user",
+            content="请继续处理",
+            metadata={
+                "memoryPreparationStatus": "failed",
+                "memoryAttemptCount": 1,
+                "memoryErrorCategory": "TimeoutError",
+            },
+        )
+
+        forbidden = await client.post(
+            f"/chat/sessions/{session['id']}/messages/{message.id}:retry",
+            headers=_auth_headers(other["accessToken"]),
+        )
+        retried = await client.post(
+            f"/chat/sessions/{session['id']}/messages/{message.id}:retry",
+            headers=owner_headers,
+        )
+        repeated = await client.post(
+            f"/chat/sessions/{session['id']}/messages/{message.id}:retry",
+            headers=owner_headers,
+        )
+        detail = await client.get(
+            f"/chat/sessions/{session['id']}",
+            headers=owner_headers,
+        )
+
+    assert forbidden.status_code == 403
+    assert retried.status_code == 200
+    assert _parse_sse(retried.text)[-1]["event"] == "complete"
+    assert _parse_sse(repeated.text)[-1]["data"]["error"]["code"] == "BUSINESS_CONFLICT"
+    persisted = detail.json()["data"]["messages"]
+    assert [item["id"] for item in persisted if item["role"] == "user"] == [message.id]
+    assert persisted[0]["metadata"]["memoryAttemptCount"] == 2
+    assert persisted[0]["metadata"]["memoryPreparationStatus"] == "succeeded"
 
 
 async def _register(client: httpx.AsyncClient, email: str, display_name: str) -> dict[str, Any]:

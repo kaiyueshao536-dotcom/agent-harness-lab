@@ -7,6 +7,11 @@ export interface ChatMessageMetadata {
   readonly reasoning?: readonly string[];
   readonly toolCallIds?: readonly string[];
   readonly custom?: Record<string, unknown>;
+  readonly memoryPreparationStatus?: "pending" | "running" | "succeeded" | "failed";
+  readonly memoryAttemptCount?: number;
+  readonly memoryTraceId?: string;
+  readonly memoryErrorCategory?: string;
+  readonly memoryCompacted?: boolean;
 }
 
 export interface CreateChatSessionRequest {
@@ -14,6 +19,27 @@ export interface CreateChatSessionRequest {
 }
 
 export type ChatMemoryMode = "every_30_turns" | "context_70_percent" | "manual";
+
+export interface ChatMemoryItem {
+  readonly key: string;
+  readonly value: string;
+  readonly sourceMessageId: string;
+}
+
+export interface ChatSupersededMemoryItem extends ChatMemoryItem {
+  readonly supersededByMessageId: string;
+}
+
+export interface ChatMemorySnapshot {
+  readonly schemaVersion: 1;
+  readonly activeConstraints: readonly ChatMemoryItem[];
+  readonly supersededFacts: readonly ChatSupersededMemoryItem[];
+  readonly decisions: readonly ChatMemoryItem[];
+  readonly preferences: readonly ChatMemoryItem[];
+  readonly openTasks: readonly ChatMemoryItem[];
+  readonly evidenceRefs: readonly { readonly messageId: string }[];
+  readonly legacySummary?: string | null;
+}
 
 export interface ChatMemoryState {
   readonly mode: ChatMemoryMode;
@@ -23,6 +49,11 @@ export interface ChatMemoryState {
   readonly compactedMessageCount: number;
   readonly lastCompactedAt: string | null;
   readonly canCompact: boolean;
+  readonly version: number;
+  readonly status: "idle" | "running" | "succeeded" | "failed";
+  readonly errorCategory: string | null;
+  readonly lastAttemptAt: string | null;
+  readonly snapshot: ChatMemorySnapshot;
 }
 
 export interface UpdateChatMemoryRequest {

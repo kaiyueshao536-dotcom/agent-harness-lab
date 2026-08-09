@@ -7,6 +7,7 @@
 
 | 版本 | 日期 | 主题 | Commit | Tag | 详细复盘 |
 | --- | --- | --- | --- | --- | --- |
+| P5 | 2026-08-09 | Chat 记忆与上下文生命周期闭环 | 以不可变 Tag 指向为准 | `p5-chat-memory-lifecycle` | [P5 复盘](docs/version-history/p5-chat-memory-lifecycle.md) |
 | P4 | 2026-08-09 | AIOps 上下文路由、Token 预算与质量 Gate | 以不可变 Tag 指向为准 | `p4-aiops-context-quality` | [P4 复盘](docs/version-history/p4-context-quality.md) |
 | P3.3.1 | 2026-08-09 | Evaluation 跨 Dataset 运行草稿隔离 | 以不可变 Tag 指向为准 | `p3.3.1-evaluation-binding-reset` | [P3.3.1 复盘](docs/version-history/p3.3.1-evaluation-binding-reset.md) |
 | P3.3 | 2026-08-09 | AIOps RAG 证据角色隔离 | 以不可变 Tag 指向为准 | [`p3.3-rag-evidence-isolation`](https://github.com/kaiyueshao536-dotcom/agent-harness-lab/tree/p3.3-rag-evidence-isolation) | [P3.3 复盘](docs/version-history/p3.3-rag-evidence-isolation.md) |
@@ -60,6 +61,14 @@
 - Evaluation 增加必需来源、禁止来源和最大上下文 Token 规则，并提供无密钥 P4 离线 fixture。
 - 真实验收首次发现旧 Milvus 索引缺少路由元数据；重新 seed/reindex 后，上下文从 3 个来源/872 Token 降至 1 个来源/284 Token。
 - 同一不可变 Dataset 中，修复前 Trace Gate 失败（80%），修复后 Trace Gate 通过（100%）；平均分相对 Baseline 提升 20 个百分点。
+
+## P5 Chat 记忆与上下文生命周期闭环
+
+- 将长对话真实审计中的压缩观测黑洞、推断污染、回答重复和失败丢消息纳入一个受控闭环。
+- 结构化 Memory Snapshot 区分当前与已废止事实，通过 message id 和原文包含校验拒绝无来源候选。
+- Trace 在压缩前创建，展示 prepare/compact/attempt/validate/agent；压缩有界超时和重试，失败不推进边界。
+- 用户消息先落库，失败后使用同一 message id 恢复；桌面 Memory Inspector 展示快照、来源和重试入口。
+- Evaluation 新增 6 类 Memory 规则，A—D 离线 fixture 的 Gate、通过率和平均分均为 100%。
 
 ## 维护规则
 

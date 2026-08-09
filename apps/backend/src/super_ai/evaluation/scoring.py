@@ -54,6 +54,9 @@ def score_case(
             "contextSourceCount": len(observation.context_source_names),
             "contextTokens": observation.context_tokens,
             "traceStatus": observation.trace_status,
+            "memoryStatus": observation.memory_status,
+            "memoryUngroundedCount": observation.memory_ungrounded_count,
+            "memoryDurationMs": observation.memory_duration_ms,
         },
         checks=checks,
     )
@@ -141,6 +144,53 @@ def _evaluate_rule(rule: EvaluationRule, observation: EvaluationObservation) -> 
     if rule.kind == "max_context_tokens":
         threshold = _threshold(rule)
         actual = observation.context_tokens
+        return _check(
+            rule,
+            actual is not None and actual <= threshold,
+            f"<={threshold}",
+            str(actual),
+        )
+    if rule.kind == "memory_contains_active":
+        active = [value.casefold() for value in observation.memory_active_values]
+        missing = [
+            raw
+            for raw, value in zip(rule.values, values, strict=True)
+            if not any(value in item for item in active)
+        ]
+        return _check(rule, not missing, ", ".join(rule.values), f"missing={missing}")
+    if rule.kind == "memory_excludes_active":
+        active = [value.casefold() for value in observation.memory_active_values]
+        found = [
+            raw
+            for raw, value in zip(rule.values, values, strict=True)
+            if any(value in item for item in active)
+        ]
+        return _check(rule, not found, ", ".join(rule.values), f"found={found}")
+    if rule.kind == "memory_no_ungrounded":
+        return _check(
+            rule,
+            observation.memory_ungrounded_count == 0,
+            "0",
+            str(observation.memory_ungrounded_count),
+        )
+    if rule.kind == "memory_compaction_succeeded":
+        return _check(
+            rule,
+            observation.memory_status == "succeeded",
+            "succeeded",
+            str(observation.memory_status),
+        )
+    if rule.kind == "no_exact_duplicate":
+        midpoint = len(observation.output_text) // 2
+        duplicated = (
+            len(observation.output_text) > 0
+            and len(observation.output_text) % 2 == 0
+            and observation.output_text[:midpoint] == observation.output_text[midpoint:]
+        )
+        return _check(rule, not duplicated, "single answer", f"duplicated={duplicated}")
+    if rule.kind == "max_memory_duration_ms":
+        threshold = _threshold(rule)
+        actual = observation.memory_duration_ms
         return _check(
             rule,
             actual is not None and actual <= threshold,

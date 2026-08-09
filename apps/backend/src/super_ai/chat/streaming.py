@@ -22,7 +22,12 @@ from super_ai.chat.configuration import (
     SelectedChatSkill,
     build_chat_system_prompt,
 )
-from super_ai.chat.memory import ChatContextLimitReached, ChatMemoryService, memory_payload
+from super_ai.chat.memory import (
+    ChatContextLimitReached,
+    ChatMemoryPreparationError,
+    ChatMemoryService,
+    memory_payload,
+)
 from super_ai.error_catalog import ERROR_DEFINITIONS
 from super_ai.llm import LlmProvider
 from super_ai.mcp_client import LocalMcpClient, create_current_time_tool
@@ -158,55 +163,218 @@ class ChatStreamingService:
         accessible_knowledge_base_ids: Sequence[str],
         request_id: str | None = None,
     ) -> AsyncIterator[dict[str, object]]:
-        started_at = monotonic()
         message_content = content.strip()
         if not message_content:
             yield _error_event("VALIDATION_INVALID_ARGUMENT")
             return
-        history = await self._repositories.chat.list_messages(
-            owner_user_id=owner_user_id,
-            session_id=session.id,
-        )
-        system_prompt, selected_skills = await self.build_agent_configuration(
-            owner_user_id=owner_user_id
-        )
-        prepared_messages: Sequence[ChatMessageRecord] | None = None
-        if self._memory_service is not None:
-            try:
-                prepared = await self._memory_service.prepare_message(
-                    owner_user_id=owner_user_id,
-                    session=session,
-                    history=history,
-                    system_prompt=system_prompt,
-                    content=message_content,
-                )
-            except ChatContextLimitReached:
-                yield _error_event("CHAT_CONTEXT_LIMIT_REACHED")
-                return
-            session = prepared.session
-            system_prompt = prepared.system_prompt
-            prepared_messages = prepared.messages
-
+        message_metadata = dict(metadata or {})
+        message_metadata["memoryPreparationStatus"] = "pending"
+        message_metadata["memoryAttemptCount"] = 0
         user_message = await self._repositories.chat.append_message(
             owner_user_id=owner_user_id,
             message_id=f"message_{uuid4().hex}",
             session_id=session.id,
             role="user",
             content=message_content,
-            metadata=metadata or {},
+            metadata=message_metadata,
         )
         await self._maybe_generate_chat_title(
             owner_user_id=owner_user_id,
             session=session,
             message_content=message_content,
         )
+        async for event in self._stream_persisted_message(
+            owner_user_id=owner_user_id,
+            session=session,
+            user_message=user_message,
+            accessible_knowledge_base_ids=accessible_knowledge_base_ids,
+            request_id=request_id,
+        ):
+            yield event
+
+    async def retry_message(
+        self,
+        *,
+        owner_user_id: str,
+        session: ChatSessionRecord,
+        message_id: str,
+        accessible_knowledge_base_ids: Sequence[str],
+        request_id: str | None = None,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Retry the same persisted user message without creating a duplicate row."""
+
         history = await self._repositories.chat.list_messages(
             owner_user_id=owner_user_id,
             session_id=session.id,
         )
-        model_messages = (
-            [*prepared_messages[:-1], user_message] if prepared_messages is not None else history
+        user_message = next(
+            (
+                message
+                for message in history
+                if message.id == message_id and message.role == "user"
+            ),
+            None,
         )
+        if user_message is None:
+            yield _error_event("BUSINESS_NOT_FOUND")
+            return
+        if user_message.metadata.get("memoryPreparationStatus") != "failed":
+            yield _error_event("BUSINESS_CONFLICT")
+            return
+        async for event in self._stream_persisted_message(
+            owner_user_id=owner_user_id,
+            session=session,
+            user_message=user_message,
+            accessible_knowledge_base_ids=accessible_knowledge_base_ids,
+            request_id=request_id,
+        ):
+            yield event
+
+    async def _stream_persisted_message(
+        self,
+        *,
+        owner_user_id: str,
+        session: ChatSessionRecord,
+        user_message: ChatMessageRecord,
+        accessible_knowledge_base_ids: Sequence[str],
+        request_id: str | None,
+    ) -> AsyncIterator[dict[str, object]]:
+        started_at = monotonic()
+        trace = await self._trace_service.start_trace(
+            owner_user_id=owner_user_id,
+            execution_type="chat",
+            resource_type="chat_session",
+            resource_id=session.id,
+            request_id=request_id,
+            metadata={"sessionId": session.id, "messageId": user_message.id},
+        )
+        if self._memory_service is not None:
+            metadata = dict(user_message.metadata)
+            metadata["memoryPreparationStatus"] = "running"
+            previous_attempt_count = metadata.get("memoryAttemptCount")
+            metadata["memoryAttemptCount"] = (
+                previous_attempt_count + 1
+                if isinstance(previous_attempt_count, int)
+                else 1
+            )
+            metadata["memoryTraceId"] = trace.trace_id
+            metadata.pop("memoryErrorCategory", None)
+            user_message = (
+                await self._repositories.chat.update_message_metadata(
+                    owner_user_id=owner_user_id,
+                    session_id=session.id,
+                    message_id=user_message.id,
+                    metadata=metadata,
+                )
+            ) or user_message
+            yield _sse_event(
+                "memory.stage",
+                {
+                    "memory": {
+                        "stage": "preparing",
+                        "status": "running",
+                        "messageId": user_message.id,
+                    }
+                },
+                trace_id=trace.trace_id,
+            )
+        history = await self._repositories.chat.list_messages(
+            owner_user_id=owner_user_id,
+            session_id=session.id,
+        )
+        previous_history = [message for message in history if message.id != user_message.id]
+        system_prompt, selected_skills = await self.build_agent_configuration(
+            owner_user_id=owner_user_id
+        )
+        model_messages: Sequence[ChatMessageRecord] = history
+        if self._memory_service is not None:
+            try:
+                prepared = await self._memory_service.prepare_message(
+                    owner_user_id=owner_user_id,
+                    session=session,
+                    history=previous_history,
+                    system_prompt=system_prompt,
+                    candidate_message=user_message,
+                    trace_context=trace,
+                )
+            except (ChatContextLimitReached, ChatMemoryPreparationError) as exc:
+                error_category = (
+                    "ChatContextLimitReached"
+                    if isinstance(exc, ChatContextLimitReached)
+                    else exc.error_category
+                )
+                metadata = dict(user_message.metadata)
+                metadata.update(
+                    {
+                        "memoryPreparationStatus": "failed",
+                        "memoryErrorCategory": error_category,
+                        "memoryTraceId": trace.trace_id,
+                    }
+                )
+                await self._repositories.chat.update_message_metadata(
+                    owner_user_id=owner_user_id,
+                    session_id=session.id,
+                    message_id=user_message.id,
+                    metadata=metadata,
+                )
+                await self._trace_service.finalize_trace(
+                    trace,
+                    status="failed",
+                    summary="Chat memory preparation failed",
+                    error_category=error_category,
+                )
+                yield _sse_event(
+                    "memory.stage",
+                    {
+                        "memory": {
+                            "stage": "preparing",
+                            "status": "failed",
+                            "messageId": user_message.id,
+                            "errorCategory": error_category,
+                            "retryable": True,
+                        }
+                    },
+                    trace_id=trace.trace_id,
+                )
+                yield _error_event(
+                    "CHAT_CONTEXT_LIMIT_REACHED"
+                    if isinstance(exc, ChatContextLimitReached)
+                    else "SYSTEM_INTERNAL_ERROR",
+                    trace_id=trace.trace_id,
+                )
+                return
+            session = prepared.session
+            system_prompt = prepared.system_prompt
+            model_messages = prepared.messages
+            metadata = dict(user_message.metadata)
+            metadata.update(
+                {
+                    "memoryPreparationStatus": "succeeded",
+                    "memoryTraceId": trace.trace_id,
+                    "memoryCompacted": prepared.compacted,
+                }
+            )
+            updated_message = await self._repositories.chat.update_message_metadata(
+                owner_user_id=owner_user_id,
+                session_id=session.id,
+                message_id=user_message.id,
+                metadata=metadata,
+            )
+            user_message = updated_message or user_message
+            yield _sse_event(
+                "memory.stage",
+                {
+                    "memory": {
+                        "stage": "preparing",
+                        "status": "succeeded",
+                        "messageId": user_message.id,
+                        "compacted": bool(
+                            user_message.metadata.get("memoryCompacted")
+                        ),
+                    }
+                },
+                trace_id=trace.trace_id,
+            )
         request = ChatAgentRequest(
             owner_user_id=owner_user_id,
             session_id=session.id,
@@ -214,14 +382,6 @@ class ChatStreamingService:
             accessible_knowledge_base_ids=tuple(accessible_knowledge_base_ids),
             system_prompt=system_prompt,
             skills=selected_skills,
-        )
-        trace = await self._trace_service.start_trace(
-            owner_user_id=owner_user_id,
-            execution_type="chat",
-            resource_type="chat_session",
-            resource_id=session.id,
-            request_id=request_id,
-            metadata={"sessionId": session.id},
         )
         agent_span_id = await self._trace_service.start_span(
             trace,
@@ -317,7 +477,7 @@ class ChatStreamingService:
                         trace_id=trace.trace_id,
                     )
 
-            answer = "".join(answer_parts).strip()
+            answer = _collapse_exact_duplicate("".join(answer_parts).strip())
             assistant_message = await self._repositories.chat.append_message(
                 owner_user_id=owner_user_id,
                 message_id=f"message_{uuid4().hex}",
@@ -625,7 +785,15 @@ class LangChainChatAgentRunner:
             cast(Any, {"messages": messages}),
             version="v2",
         ):
-            parsed = _agent_event_from_langchain_event(cast(Mapping[str, object], raw_event))
+            raw_mapping = cast(Mapping[str, object], raw_event)
+            if raw_mapping.get("event") == "on_chain_stream" and str(
+                raw_mapping.get("name") or ""
+            ) == "model":
+                # ChatOpenAI already emits the same model tokens through
+                # on_chat_model_stream. Consuming both callbacks duplicates the
+                # visible answer and the persisted assistant message.
+                continue
+            parsed = _agent_event_from_langchain_event(raw_mapping)
             if parsed is None:
                 continue
             if isinstance(parsed, list):
@@ -979,6 +1147,15 @@ def _normalize_chat_title(title: str) -> str:
 def _append_unique(items: list[str], item: str) -> None:
     if item not in items:
         items.append(item)
+
+
+def _collapse_exact_duplicate(value: str) -> str:
+    """Defensively collapse an exact two-copy answer before persistence."""
+
+    if len(value) % 2 != 0:
+        return value
+    midpoint = len(value) // 2
+    return value[:midpoint] if value[:midpoint] == value[midpoint:] else value
 
 
 def _now_iso() -> str:

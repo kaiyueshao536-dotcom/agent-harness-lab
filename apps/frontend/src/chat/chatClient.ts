@@ -39,6 +39,7 @@ export interface ChatClient {
   uploadSkill?(file: File): Promise<ChatSkillUploadResponse>;
   deleteSkill?(skillId: string): Promise<DeleteChatSkillResponse>;
   streamMessage(sessionId: string, request: StreamChatMessageRequest): AsyncIterable<SseEvent>;
+  retryMessage(sessionId: string, messageId: string): AsyncIterable<SseEvent>;
 }
 
 export interface CreateChatClientOptions {
@@ -107,6 +108,10 @@ export function createChatClient(options: CreateChatClientOptions = {}): ChatCli
     streamMessage: (sessionId, request) =>
       sse.stream(`/chat/sessions/${sessionId}/messages:stream`, {
         body: JSON.stringify(request),
+        method: "POST"
+      }),
+    retryMessage: (sessionId, messageId) =>
+      sse.stream(`/chat/sessions/${sessionId}/messages/${messageId}:retry`, {
         method: "POST"
       })
   };

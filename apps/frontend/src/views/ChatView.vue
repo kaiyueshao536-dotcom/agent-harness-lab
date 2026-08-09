@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
 import type { ReferenceSourceSseEvent } from "@agent-py/api-contracts";
 
 import ChatComposer from "../components/ChatComposer.vue";
+import ChatMemoryInspector from "../components/ChatMemoryInspector.vue";
 import ChatPromptSidebar from "../components/ChatPromptSidebar.vue";
 import ChatSkillSidebar from "../components/ChatSkillSidebar.vue";
 import ChatTranscript from "../components/ChatTranscript.vue";
@@ -42,6 +43,13 @@ function saveChatConfiguration(systemPromptId: string, skillIds: readonly string
   <section class="chat-view" aria-label="对话工作区">
     <div class="chat-view__conversation">
       <header><p>当前对话</p><h2>{{ activeTitle }}</h2></header>
+      <ChatMemoryInspector
+        :disabled="chat.isSending"
+        :memory="chat.activeSession?.memory ?? null"
+        :messages="chat.messages"
+        :stage="chat.memoryStage"
+        @retry="run(() => chat.retryFailedMemory($event))"
+      />
       <ChatTranscript
         :is-loading="chat.isLoading"
         :live-tool-calls="chat.liveToolCalls"
@@ -82,7 +90,7 @@ function saveChatConfiguration(systemPromptId: string, skillIds: readonly string
 
 <style scoped>
 .chat-view { background: var(--surface-raised); display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem); height: 100%; overflow: hidden; }
-.chat-view__conversation { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; min-width: 0; }
+.chat-view__conversation { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; min-width: 0; }
 .chat-view__conversation > header { align-items: center; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; min-height: 3.75rem; padding: 0.75rem clamp(1rem, 3vw, 2rem); }
 .chat-view__conversation > header p { color: var(--text-tertiary); font-size: 0.72rem; font-weight: 650; margin: 0; }
 .chat-view__conversation > header h2 { font-size: 0.92rem; font-weight: 660; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

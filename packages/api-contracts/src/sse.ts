@@ -5,6 +5,7 @@ export const SSE_EVENT_TYPES = [
   "reasoning.delta",
   "tool.call",
   "reference.source",
+  "memory.stage",
   "task.status",
   "report",
   "complete",
@@ -67,6 +68,17 @@ export interface ReferenceSourceSseEvent extends SseEventBase<"reference.source"
   };
 }
 
+export interface MemoryStageSseEvent extends SseEventBase<"memory.stage"> {
+  readonly memory: {
+    readonly stage: "preparing" | "compacting" | "validating";
+    readonly status: "running" | "succeeded" | "failed";
+    readonly messageId: string;
+    readonly compacted?: boolean;
+    readonly errorCategory?: string;
+    readonly retryable?: boolean;
+  };
+}
+
 export interface TaskStatusSseEvent extends SseEventBase<"task.status"> {
   readonly task: {
     readonly id: string;
@@ -98,6 +110,7 @@ export type SseEvent =
   | ReasoningDeltaSseEvent
   | ToolCallSseEvent
   | ReferenceSourceSseEvent
+  | MemoryStageSseEvent
   | TaskStatusSseEvent
   | ReportSseEvent
   | CompleteSseEvent

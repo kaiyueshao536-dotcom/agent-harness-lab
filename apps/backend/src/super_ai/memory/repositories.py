@@ -31,6 +31,11 @@ class ChatSessionRecord:
     compacted_message_count: int = 0
     context_tokens: int = 0
     last_compacted_at: datetime | None = None
+    memory_snapshot: JsonDict | None = None
+    memory_version: int = 0
+    memory_status: str = "idle"
+    memory_error_category: str | None = None
+    last_memory_attempt_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -475,10 +480,27 @@ class ChatMemoryRepository(Protocol):
         compacted_message_count: int | None = None,
         context_tokens: int | None = None,
         last_compacted_at: datetime | None = None,
+        memory_snapshot: JsonDict | None = None,
+        memory_version: int | None = None,
+        memory_status: str | None = None,
+        memory_error_category: str | None = None,
+        last_memory_attempt_at: datetime | None = None,
+        clear_memory_error: bool = False,
         clear_compaction: bool = False,
         updated_at: datetime | None = None,
     ) -> ChatSessionRecord | None:
         """Update owner-scoped memory policy and compaction state."""
+        ...
+
+    async def update_message_metadata(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+        message_id: str,
+        metadata: JsonDict,
+    ) -> ChatMessageRecord | None:
+        """Replace metadata for one owner-scoped chat message."""
         ...
 
     async def list_sessions(

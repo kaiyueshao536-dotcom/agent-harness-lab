@@ -124,6 +124,38 @@ def test_context_budget_rule_does_not_treat_legacy_trace_as_zero_tokens() -> Non
     assert result.checks[0].actual == "None"
 
 
+def test_chat_memory_rules_detect_old_value_leak_grounding_and_duplicate_output() -> None:
+    observation = EvaluationObservation(
+        trace_id="trace-memory",
+        execution_type="chat",
+        output_text="当前以 5s 为准。",
+        trace_status="succeeded",
+        memory_active_values=["超时阈值=5s"],
+        memory_superseded_values=["超时阈值=30s"],
+        memory_ungrounded_count=0,
+        memory_status="succeeded",
+        memory_duration_ms=800,
+    )
+    rules = [
+        EvaluationRule(kind="memory_contains_active", values=["超时阈值=5s"]),
+        EvaluationRule(kind="memory_excludes_active", values=["超时阈值=30s"]),
+        EvaluationRule(kind="memory_no_ungrounded"),
+        EvaluationRule(kind="memory_compaction_succeeded"),
+        EvaluationRule(kind="no_exact_duplicate"),
+        EvaluationRule(kind="max_memory_duration_ms", threshold=1000),
+    ]
+
+    passed = score_case(rules, observation)
+    duplicate = score_case(
+        [EvaluationRule(kind="no_exact_duplicate")],
+        observation.model_copy(update={"output_text": "重复重复"}),
+    )
+
+    assert passed.passed is True
+    assert passed.metrics["memoryStatus"] == "succeeded"
+    assert duplicate.passed is False
+
+
 def test_offline_cli_uses_gate_exit_codes(tmp_path: Path) -> None:
     repository_root = Path(__file__).resolve().parents[3]
     pass_fixture = repository_root / "evals" / "fixtures" / "p2-smoke-pass.json"

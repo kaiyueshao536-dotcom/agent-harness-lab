@@ -6,6 +6,11 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 from uuid import uuid4
 
+from super_ai.chat.memory_models import (
+    MemorySnapshotValidationError,
+    legacy_or_structured_snapshot,
+    validate_memory_snapshot,
+)
 from super_ai.evaluation.models import (
     EvaluationCaseDefinition,
     EvaluationGate,
@@ -219,12 +224,31 @@ class EvaluationHarnessService:
         tool_names = [span.name for span in spans if span.kind == "tool"]
         context_source_names: list[str] = []
         context_tokens: int | None = None
+        memory_active_values: list[str] = []
+        memory_superseded_values: list[str] = []
+        memory_ungrounded_count = 0
+        memory_status: str | None = None
+        memory_duration_ms: int | None = None
         if trace.execution_type == "chat":
             output_text, reference_count = await self._resolve_chat_output(
                 owner_user_id=owner_user_id,
                 session_id=trace.resource_id,
                 trace_id=trace_id,
             )
+            (
+                memory_active_values,
+                memory_superseded_values,
+                memory_ungrounded_count,
+                memory_status,
+            ) = await self._resolve_chat_memory(
+                owner_user_id=owner_user_id,
+                session_id=trace.resource_id,
+            )
+            memory_span = next(
+                (span for span in spans if span.name == "chat.memory.prepare"),
+                None,
+            )
+            memory_duration_ms = memory_span.duration_ms if memory_span is not None else None
         else:
             output_text, reference_count = await self._resolve_aiops_output(
                 owner_user_id=owner_user_id,
@@ -244,7 +268,41 @@ class EvaluationHarnessService:
             context_tokens=context_tokens,
             duration_ms=trace.duration_ms,
             trace_status=trace.status,
+            memory_active_values=memory_active_values,
+            memory_superseded_values=memory_superseded_values,
+            memory_ungrounded_count=memory_ungrounded_count,
+            memory_status=memory_status,
+            memory_duration_ms=memory_duration_ms,
         )
+
+    async def _resolve_chat_memory(
+        self,
+        *,
+        owner_user_id: str,
+        session_id: str,
+    ) -> tuple[list[str], list[str], int, str | None]:
+        session = await self._repositories.chat.get_session(
+            owner_user_id=owner_user_id,
+            session_id=session_id,
+        )
+        if session is None:
+            raise EvaluationBindingError("Chat session is unavailable.")
+        messages = await self._repositories.chat.list_messages(
+            owner_user_id=owner_user_id,
+            session_id=session_id,
+        )
+        snapshot = legacy_or_structured_snapshot(
+            session.memory_snapshot,
+            session.memory_summary,
+        )
+        ungrounded_count = 0
+        try:
+            validate_memory_snapshot(snapshot, messages)
+        except MemorySnapshotValidationError:
+            ungrounded_count = 1
+        active = [f"{item.key}={item.value}" for item in snapshot.active_constraints]
+        superseded = [f"{item.key}={item.value}" for item in snapshot.superseded_facts]
+        return active, superseded, ungrounded_count, session.memory_status
 
     async def _resolve_chat_output(
         self, *, owner_user_id: str, session_id: str, trace_id: str

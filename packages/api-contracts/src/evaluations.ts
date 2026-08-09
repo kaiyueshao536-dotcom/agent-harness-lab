@@ -11,7 +11,13 @@ export type EvaluationRuleKind =
   | "max_duration_ms"
   | "max_tool_calls"
   | "evidence_cautious"
-  | "trace_succeeded";
+  | "trace_succeeded"
+  | "memory_contains_active"
+  | "memory_excludes_active"
+  | "memory_no_ungrounded"
+  | "memory_compaction_succeeded"
+  | "no_exact_duplicate"
+  | "max_memory_duration_ms";
 
 export interface EvaluationRule {
   readonly kind: EvaluationRuleKind;

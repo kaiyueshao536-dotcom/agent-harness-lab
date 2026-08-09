@@ -21,6 +21,7 @@ describe("frontend contract consumption", () => {
       "reasoning.delta",
       "tool.call",
       "reference.source",
+      "memory.stage",
       "task.status",
       "report",
       "complete",

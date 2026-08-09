@@ -20,6 +20,12 @@ RuleKind = Literal[
     "max_tool_calls",
     "evidence_cautious",
     "trace_succeeded",
+    "memory_contains_active",
+    "memory_excludes_active",
+    "memory_no_ungrounded",
+    "memory_compaction_succeeded",
+    "no_exact_duplicate",
+    "max_memory_duration_ms",
 ]
 
 
@@ -41,12 +47,15 @@ class EvaluationRule(BaseModel):
             "required_tools",
             "required_context_sources",
             "excluded_context_sources",
+            "memory_contains_active",
+            "memory_excludes_active",
         }
         threshold_kinds = {
             "min_references",
             "max_duration_ms",
             "max_tool_calls",
             "max_context_tokens",
+            "max_memory_duration_ms",
         }
         if self.kind in value_kinds and not self.values:
             raise ValueError(f"{self.kind} requires at least one value")
@@ -94,6 +103,11 @@ class EvaluationObservation(BaseModel):
     context_tokens: int | None = Field(default=None, ge=0)
     duration_ms: int | None = Field(default=None, ge=0)
     trace_status: str
+    memory_active_values: list[str] = Field(default_factory=list)
+    memory_superseded_values: list[str] = Field(default_factory=list)
+    memory_ungrounded_count: int = Field(default=0, ge=0)
+    memory_status: str | None = None
+    memory_duration_ms: int | None = Field(default=None, ge=0)
 
 
 class RuleCheck(BaseModel):

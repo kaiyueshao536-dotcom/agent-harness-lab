@@ -6,6 +6,7 @@
 
 ## 当前版本
 
+- [P5：Chat 记忆与上下文生命周期闭环](p5-chat-memory-lifecycle.md)
 - [P4：AIOps 上下文质量闭环](p4-context-quality.md)
 - [P3.3.1：Evaluation 跨 Dataset 运行草稿隔离](p3.3.1-evaluation-binding-reset.md)
 - [P3.3：AIOps RAG 证据角色隔离](p3.3-rag-evidence-isolation.md)

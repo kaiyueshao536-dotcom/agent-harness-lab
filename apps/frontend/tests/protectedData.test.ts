@@ -823,7 +823,20 @@ function _chatSession(overrides: Partial<ChatSessionSummary> = {}): ChatSessionS
       contextUsagePercent: 0.9,
       compactedMessageCount: 0,
       lastCompactedAt: null,
-      canCompact: true
+      canCompact: true,
+      version: 0,
+      status: "idle",
+      errorCategory: null,
+      lastAttemptAt: null,
+      snapshot: {
+        schemaVersion: 1,
+        activeConstraints: [],
+        supersededFacts: [],
+        decisions: [],
+        preferences: [],
+        openTasks: [],
+        evidenceRefs: []
+      }
     },
     ...overrides
   };

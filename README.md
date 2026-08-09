@@ -21,7 +21,7 @@ Agent Demo 很容易停在“模型能回答”。这个项目关注更难也更
 - **诊断编排**：LangGraph `Planner → Executor → Replanner → Report`，支持持久任务、取消、重试、断线恢复、证据链和 Markdown 报告。
 - **MCP 与真实日志**：管理用户级 MCP 连接；通过腾讯云官方 `cls-mcp-server` 查询真实 CLS 数据，并审计每次工具调用。
 - **渐进式 Skill**：上传标准 `SKILL.md`；初始上下文只暴露名称和描述，需要时再加载正文。
-- **上下文与记忆**：按会话选择轮次、窗口占用率或手动压缩策略；压缩保留摘要和完整历史。
+- **Chat 记忆生命周期**：先保存用户消息再压缩旧历史；结构化快照区分当前约束与已废止事实，每项保留来源 message id 并做原文校验；压缩超时、重试和失败纳入 Trace，失败消息可使用同一 id 重试。
 - **RAG**：Markdown/PDF 切分，Milvus 向量检索与 BM25L 并行召回，RRF 融合、Qwen rerank 和可解释排名。
 - **统一 Agent Trace**：Chat 与 AIOps 共享 Trace/Span 模型、SSE `traceId` 和工具 `spanId`；桌面端可按类型/状态筛选并查看有序执行时间线。
 - **自动评测 Harness**：不可变版本数据集把真实 Trace 绑定到确定性质量规则，生成逐案例检查、聚合指标、质量门禁和同数据集基线差异；离线 CLI 与 CI 无需模型或云服务密钥。
@@ -154,6 +154,7 @@ uv run super-ai-eval ../../evals/fixtures/p2-smoke-pass.json
 uv run super-ai-eval ../../evals/fixtures/p3-tool-recovery-pass.json
 uv run super-ai-eval ../../evals/fixtures/p3-report-evidence-pass.json
 uv run super-ai-eval ../../evals/fixtures/p3.3-rag-evidence-isolation-pass.json
+uv run super-ai-eval ../../evals/fixtures/p5-chat-memory-lifecycle-pass.json
 uv run pytest
 ```
 
