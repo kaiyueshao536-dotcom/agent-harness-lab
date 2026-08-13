@@ -18,7 +18,7 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@fission-ai/openspec": "^1.4.1",
+    "@fission-ai/openspec": "^1.8.0",
     "vitepress": "^1.6.4"
   }
 }
