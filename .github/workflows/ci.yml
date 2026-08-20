@@ -55,7 +55,7 @@ jobs:
           node --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; const path = 'config/user.project.json'; const config = JSON.parse(readFileSync(path, 'utf8')); config.llm.apiKey = 'ci-placeholder-not-a-secret'; writeFileSync(path, JSON.stringify(config));"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.30"
           enable-cache: true
